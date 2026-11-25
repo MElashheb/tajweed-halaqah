@@ -1,0 +1,3391 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tajweed Halaqah Challenge - Zoom & Classroom Edition v4.2</title>
+    <!-- Google Fonts for Amiri & Scheherazade New -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Amiri:ital,wght@0,400;0,700;1,400;1,700&family=Scheherazade+New:wght@400;700&display=swap" rel="stylesheet">
+    
+    <!-- Firebase App, Realtime Database & Analytics Compat SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-analytics-compat.js"></script>
+
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f4f6f9; color: #333; padding: 15px; margin: 0; box-sizing: border-box; text-align: left; }
+        .game-card { background: #fff; max-width: 860px; margin: 0 auto; padding: 25px 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.08); border-top: 6px solid #2d6a4f; transition: all 0.3s ease; }
+        
+        .top-nav { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #eee; padding-bottom: 12px; margin-bottom: 16px; flex-wrap: wrap; gap: 10px; }
+        h2 { color: #1b4332; margin: 0; font-size: 1.2em; }
+        
+        .nav-btn { background: #e2e8f0; color: #334155; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-family: inherit; font-size: 0.85em; transition: 0.2s; }
+        .nav-btn:hover { background: #cbd5e1; }
+        .nav-btn.active { background: #2d6a4f; color: white; }
+        .nav-btn.lab-btn { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+        .nav-btn.lab-btn:hover { background: #fde68a; }
+        .nav-btn.join-btn { background: #dbeafe; color: #1e40af; border: 1px solid #93c5fd; }
+        .nav-btn.join-btn:hover { background: #bfdbfe; }
+
+        /* Modals */
+        .modal-box { display: none; background: #f8fafc; border: 2px solid #2d6a4f; padding: 20px; border-radius: 10px; margin-bottom: 18px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); text-align: left; }
+        #password-modal { text-align: center; }
+        .modal-box h3 { color: #1b4332; margin-top: 0; margin-bottom: 12px; font-size: 1.1em; }
+        #admin-pass-input { width: 80%; max-width: 300px; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 1em; margin-bottom: 12px; display: block; margin-left: auto; margin-right: auto; text-align: center; font-family: inherit; }
+        #pass-error-msg { color: #dc3545; font-size: 0.9em; font-weight: bold; margin-bottom: 10px; display: none; }
+
+        /* Interactive Tajweed Lab */
+        .lab-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 15px; }
+        @media (max-width: 640px) { .lab-grid { grid-template-columns: 1fr; } }
+        .lab-card { background: #fff; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px; }
+        .madd-beat-row { display: flex; gap: 8px; justify-content: center; margin: 12px 0; }
+        .madd-dot { width: 32px; height: 32px; border-radius: 50%; background: #e2e8f0; color: #475569; display: flex; align-items: center; justify-content: center; font-weight: bold; transition: 0.15s; }
+        .madd-dot.lit { background: #0f766e; color: #fff; transform: scale(1.15); box-shadow: 0 0 10px rgba(15,118,110,0.5); }
+        .tajweed-sample { font-family: 'Amiri', 'Scheherazade New', serif; font-size: 1.6em; direction: rtl; text-align: center; background: #f0fdf4; padding: 8px; border-radius: 6px; margin-top: 8px; }
+        .hl-qalqalah { color: #dc2626; font-weight: bold; }
+        .hl-ghunnah { color: #16a34a; font-weight: bold; }
+        .hl-ikhfa { color: #d97706; font-weight: bold; }
+        .hl-madd { color: #2563eb; font-weight: bold; }
+
+        /* Game Scoreboard & Lifelines */
+        .teams-score-board { display: none; gap: 10px; align-items: center; font-size: 0.9em; font-weight: bold; margin-bottom: 10px; flex-wrap: wrap; }
+        .team-box { padding: 8px 14px; border-radius: 12px; border: 2px solid transparent; transition: 0.2s; }
+        .team1-box { background: #e0f2fe; color: #0369a1; border-color: #bae6fd; }
+        .team2-box { background: #fce7f3; color: #be185d; border-color: #fbcfe8; }
+        .active-turn { box-shadow: 0 0 0 3px #2d6a4f; transform: scale(1.03); }
+        .locked-in-badge { background: #16a34a; color: #fff; padding: 2px 8px; border-radius: 8px; font-size: 0.8em; margin-left: 6px; }
+        .waiting-badge { background: #f59e0b; color: #fff; padding: 2px 8px; border-radius: 8px; font-size: 0.8em; margin-left: 6px; }
+        .streak-badge { font-size: 0.8em; background: rgba(255,255,255,0.8); padding: 2px 6px; border-radius: 6px; margin-left: 5px; }
+
+        .lifeline-bar { display: none; justify-content: space-between; align-items: center; background: #f8fafc; border: 1px solid #cbd5e1; padding: 8px 12px; border-radius: 8px; margin-bottom: 12px; flex-wrap: wrap; gap: 8px; }
+        .lifeline-btn { background: #fff; border: 1px solid #94a3b8; color: #1e293b; padding: 5px 10px; border-radius: 6px; font-size: 0.82em; font-weight: bold; cursor: pointer; font-family: inherit; transition: 0.2s; }
+        .lifeline-btn:hover:not(:disabled) { background: #e0f2fe; border-color: #0284c7; }
+        .lifeline-btn:disabled { opacity: 0.45; cursor: not-allowed; text-decoration: line-through; }
+
+        .timer-badge { background: #fff3cd; color: #856404; padding: 5px 10px; border-radius: 15px; font-size: 0.85em; border: 1px solid #ffeeba; margin-left: auto; }
+        .timer-danger { background: #f8d7da; color: #721c24; }
+
+        .timer-bar-bg { width: 100%; height: 6px; background: #e2e8f0; border-radius: 4px; overflow: hidden; margin-bottom: 14px; display: none; }
+        .timer-bar-fill { height: 100%; background: #2d6a4f; width: 100%; transition: width 1s linear; }
+
+        .topic-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 6px; }
+        .topic-tag { display: inline-block; background: #edf2f7; color: #4a5568; font-size: 0.8em; font-weight: 600; padding: 4px 10px; border-radius: 4px; }
+        .double-pts-badge { display: none; background: #7c3aed; color: #fff; font-size: 0.8em; font-weight: bold; padding: 4px 10px; border-radius: 4px; animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.7; } 100% { opacity: 1; } }
+
+        .speak-btn { background: #ecfdf5; border: 1px solid #10b981; color: #047857; padding: 4px 10px; border-radius: 6px; font-size: 0.82em; font-weight: bold; cursor: pointer; font-family: inherit; }
+        .speak-btn:hover { background: #d1fae5; }
+        
+        /* Dual Language Typography */
+        .question-box { font-size: 1.1em; font-weight: bold; margin-bottom: 18px; line-height: 1.6; color: #1a202c; }
+        .q-en { display: block; color: #1e293b; margin-bottom: 6px; font-size: 1em; }
+        .q-ar { display: block; color: #0f766e; font-size: 1.4em; font-weight: bold; font-family: 'Amiri', 'Traditional Arabic', 'Scheherazade New', serif; }
+
+        .turn-announcement { font-size: 0.95em; font-weight: bold; color: #2d6a4f; margin-bottom: 10px; background: #f0fdf4; padding: 8px; border-radius: 6px; text-align: center; }
+        
+        .options { display: flex; flex-direction: column; gap: 10px; }
+        .opt-row { display: flex; align-items: stretch; gap: 8px; }
+        button.opt-btn { background: #f8fafc; border: 2px solid #cbd5e1; padding: 12px 16px; border-radius: 8px; cursor: pointer; text-align: left; transition: all 0.2s; color: #1e293b; flex: 1; font-family: inherit; position: relative; }
+        button.opt-btn:hover:not(:disabled) { background: #e8f5e9; border-color: #2d6a4f; }
+        button.opt-btn:disabled { cursor: default; }
+        .opt-audio-btn { background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 8px; padding: 0 12px; cursor: pointer; font-size: 1.1em; color: #0f766e; transition: 0.2s; }
+        .opt-audio-btn:hover { background: #e2e8f0; }
+        
+        .opt-en { display: block; font-weight: 600; font-size: 0.95em; margin-bottom: 4px; }
+        .opt-ar { display: block; color: #0f766e; font-size: 1.25em; font-weight: bold; font-family: 'Amiri', 'Traditional Arabic', 'Scheherazade New', serif; }
+        .team-pick-badges { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+        .pick-pill-t1 { background: #0284c7; color: #fff; font-size: 0.76em; font-weight: bold; padding: 2px 8px; border-radius: 10px; }
+        .pick-pill-t2 { background: #db2777; color: #fff; font-size: 0.76em; font-weight: bold; padding: 2px 8px; border-radius: 10px; }
+
+        .feedback { margin-top: 18px; font-weight: 500; padding: 14px; border-radius: 8px; display: none; line-height: 1.6; }
+        .correct { background: #d4edda; color: #155724; border-left: 5px solid #28a745; }
+        .incorrect { background: #f8d7da; color: #721c24; border-left: 5px solid #dc3545; }
+        
+        .controls { display: flex; justify-content: space-between; align-items: center; margin-top: 22px; }
+        .progress-text { font-size: 0.9em; color: #64748b; font-weight: 600; }
+        #next-btn { background: #2d6a4f; color: white; border: none; padding: 11px 24px; border-radius: 6px; cursor: pointer; font-size: 1em; font-weight: bold; display: none; font-family: inherit; }
+        #next-btn:hover { background: #1b4332; }
+        
+        #menu-container, #setup-container, #lobby-container, #player-join-container, #player-game-container { text-align: center; padding: 10px 0; display: none; }
+        #menu-container { display: block; }
+        .path-btn { display: block; width: 100%; background: #f0fdf4; border: 2px solid #2d6a4f; color: #1b4332; padding: 15px; border-radius: 10px; font-size: 1.05em; font-weight: bold; cursor: pointer; margin: 12px 0; transition: 0.2s; text-align: left; font-family: inherit; }
+        .path-btn:hover { background: #dcfce7; }
+        .path-desc { font-size: 0.85em; color: #4b5563; font-weight: normal; margin-top: 5px; display: block; pointer-events: none; }
+        .path-topic-badge { display: inline-block; margin-top: 6px; font-size: 0.78em; background: rgba(255,255,255,0.85); border: 1px solid #cbd5e1; color: #0f766e; padding: 2px 8px; border-radius: 12px; pointer-events: none; }
+        
+        .input-group { margin: 15px 0; text-align: left; }
+        .input-group label { display: block; font-weight: bold; margin-bottom: 5px; color: #1b4332; }
+        .input-group input, .input-group select { width: 100%; padding: 12px; border: 2px solid #cbd5e1; border-radius: 8px; font-size: 1em; font-family: inherit; box-sizing: border-box; }
+        .action-btn { background: #2d6a4f; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-size: 1.05em; font-weight: bold; cursor: pointer; width: 100%; margin-top: 15px; font-family: inherit; transition: 0.2s; }
+        .action-btn:hover { background: #1b4332; }
+
+        /* Mode Toggle Cards */
+        .mode-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 15px 0; text-align: left; }
+        @media (max-width: 600px) { .mode-grid { grid-template-columns: 1fr; } }
+        .mode-card { border: 2px solid #cbd5e1; border-radius: 10px; padding: 14px; cursor: pointer; background: #f8fafc; transition: 0.2s; }
+        .mode-card.selected { border-color: #2d6a4f; background: #f0fdf4; box-shadow: 0 2px 8px rgba(45,106,79,0.15); }
+        .mode-card h4 { margin: 0 0 6px 0; color: #1b4332; font-size: 1em; }
+        .mode-card p { margin: 0; font-size: 0.84em; color: #475569; line-height: 1.4; }
+
+        /* Live Lobby Box */
+        .room-code-display { font-size: 2.6em; font-weight: 900; letter-spacing: 6px; color: #1b4332; background: #f0fdf4; border: 3px dashed #2d6a4f; border-radius: 12px; padding: 14px 24px; display: inline-block; margin: 10px 0; }
+        .lobby-teams-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 16px 0; }
+        @media (max-width: 600px) { .lobby-teams-grid { grid-template-columns: 1fr; } }
+        .lobby-team-card { border: 2px solid #cbd5e1; border-radius: 10px; padding: 14px; background: #f8fafc; }
+        .lobby-team-card.connected { border-color: #16a34a; background: #f0fdf4; }
+
+        #quiz-container { display: none; }
+        #summary-container { text-align: center; padding: 10px 0; display: none; }
+        .summary-score { font-size: 2.2em; font-weight: bold; color: #2d6a4f; margin: 8px 0; }
+        
+        .post-fail-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+        .transfer-action-btn { background: #d97706; color: white; border: none; padding: 10px 18px; border-radius: 6px; font-weight: bold; cursor: pointer; font-family: inherit; display: none; }
+        .transfer-action-btn:hover { background: #b45309; }
+        .reveal-action-btn { background: #475569; color: white; border: none; padding: 10px 18px; border-radius: 6px; font-weight: bold; cursor: pointer; font-family: inherit; display: none; }
+        .reveal-action-btn:hover { background: #334155; }
+
+        /* Live Cloud Leaderboard & Match Review Container */
+        #live-leaderboard-box, #match-review-box { margin: 20px 0; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 15px; text-align: left; }
+        .review-item { border-bottom: 1px solid #e2e8f0; padding: 10px 0; }
+        .review-item:last-child { border-bottom: none; }
+        .badge-correct { background: #d4edda; color: #155724; padding: 2px 8px; border-radius: 12px; font-size: 0.8em; font-weight: bold; }
+        .badge-missed { background: #f8d7da; color: #721c24; padding: 2px 8px; border-radius: 12px; font-size: 0.8em; font-weight: bold; }
+
+        /* Admin Dashboard Panel & Topic Selector */
+        #admin-panel { display: none; text-align: left; }
+        .section-box { background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 15px; margin-bottom: 20px; }
+        .section-title { font-weight: bold; font-size: 1.05em; color: #2d6a4f; margin-bottom: 12px; }
+        .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+        .form-group { margin-bottom: 12px; text-align: left; }
+        .form-group.full { grid-column: span 2; }
+        .admin-card-label { display: block; font-weight: bold; margin-bottom: 5px; color: #334155; font-size: 0.9em; }
+        input[type="text"], input[type="number"], input[type="password"], select, textarea { width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.95em; font-family: inherit; box-sizing: border-box; }
+        textarea { resize: vertical; height: 65px; }
+        
+        .topic-selector-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; max-height: 260px; overflow-y: auto; background: #fff; border: 1px solid #cbd5e1; padding: 10px; border-radius: 6px; margin-top: 8px; }
+        @media (max-width: 640px) { .topic-selector-grid { grid-template-columns: 1fr; } }
+        .topic-check-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 1px solid #e2e8f0; border-radius: 6px; background: #f8fafc; cursor: pointer; font-size: 0.86em; transition: 0.15s; }
+        .topic-check-item:hover { background: #f0fdf4; border-color: #86efac; }
+        .topic-check-item input[type="checkbox"] { width: 16px; height: 16px; accent-color: #2d6a4f; cursor: pointer; margin: 0; flex-shrink: 0; }
+        .topic-count-pill { margin-left: auto; background: #e2e8f0; color: #334155; font-size: 0.78em; font-weight: bold; padding: 2px 6px; border-radius: 10px; }
+
+        .admin-ar-input {
+            direction: rtl;
+            text-align: right;
+            font-size: 1.15em;
+            font-family: 'Amiri', 'Traditional Arabic', 'Scheherazade New', serif;
+            color: #0f766e;
+        }
+
+        .custom-q-item { display: flex; justify-content: space-between; align-items: center; background: #fff; border: 1px solid #cbd5e1; padding: 10px 12px; border-radius: 6px; margin-bottom: 8px; gap: 10px; }
+        .custom-q-text { font-size: 0.9em; color: #1e293b; flex: 1; }
+        .btn-danger-sm { background: #dc3545; color: #fff; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 0.85em; }
+        .btn-danger-sm:hover { background: #b91c1c; }
+
+        .btn-warning { background: #d97706; color: #fff; }
+        .btn-warning:hover { background: #b45309; }
+        .alert-box { padding: 10px; border-radius: 6px; background: #d4edda; color: #155724; margin-top: 15px; display: none; font-weight: bold; text-align: center; }
+
+        @media print {
+            body { background: #fff; padding: 0; }
+            .top-nav, #live-leaderboard-box, .no-print { display: none !important; }
+            .game-card { box-shadow: none; border: none; max-width: 100%; padding: 0; }
+            #match-review-box { border: 1px solid #ccc; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="game-card">
+    <div class="top-nav">
+        <div>
+            <h2>Tajweed Halaqah Challenge / مسابقة حلقة التجويد</h2>
+        </div>
+        <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+            <button type="button" class="nav-btn join-btn" id="btn-join-room-nav" data-action="open-player-join" title="Join a Live Zoom/Phone Room">📱 Join Room / انضم لغرفة</button>
+            <button type="button" class="nav-btn" id="btn-mute-sfx" data-action="toggle-mute" title="Toggle Sound Effects">🔊 SFX On</button>
+            <button type="button" class="nav-btn lab-btn" data-action="open-lab" title="Interactive Tajweed & Madd Lab">🕌 Tajweed Lab</button>
+            <button type="button" class="nav-btn" data-action="open-rules" title="How to Play">📖 Rules</button>
+            <button type="button" class="nav-btn" data-action="toggle-fullscreen" title="Toggle Fullscreen">⛶ Fullscreen</button>
+            <button type="button" class="nav-btn active" id="btn-game-view" data-action="switch-view" data-view="game">Host</button>
+            <button type="button" class="nav-btn" id="btn-admin-view" data-action="switch-view" data-view="admin">Admin ⚙️</button>
+        </div>
+    </div>
+
+    <!-- Password Modal -->
+    <div id="password-modal" class="modal-box">
+        <h3>🔒 Enter Administrator / أدخل كلمة مرور المشرف</h3>
+        <input type="password" id="admin-pass-input" placeholder="Secret password...">
+        <div id="pass-error-msg">⚠️ Incorrect password / كلمة المرور غير صحيحة</div>
+        <div>
+            <button type="button" class="action-btn" data-action="submit-password" style="width:auto; padding:8px 24px; margin-top:0;">Login / دخول</button>
+            <button type="button" class="nav-btn" data-action="cancel-password" style="padding:9px 20px; margin-left:6px;">Cancel / إلغاء</button>
+        </div>
+    </div>
+
+    <!-- Interactive Tajweed & Madd Lab Modal -->
+    <div id="tajweed-lab-modal" class="modal-box">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <h3 style="margin:0;">🕌 Interactive Tajweed & Madd Lab / مختبر التجويد التفاعلي</h3>
+            <button type="button" class="nav-btn" data-action="close-lab">✖ Close / إغلاق</button>
+        </div>
+        <div class="lab-grid">
+            <div class="lab-card">
+                <strong style="color:#1b4332;">⏱️ Harakat (Madd) Beat Metronome / ميزان الحركات</strong>
+                <p style="font-size:0.85em; color:#475569; margin:6px 0;">Select a Madd length to hear and visualize the exact vowel beat timing:</p>
+                <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px;">
+                    <button type="button" class="nav-btn" data-action="play-madd-beats" data-beats="2">2 Harakat (Tabii)</button>
+                    <button type="button" class="nav-btn" data-action="play-madd-beats" data-beats="4">4 Harakat (Muttasil)</button>
+                    <button type="button" class="nav-btn" data-action="play-madd-beats" data-beats="5">5 Harakat (Muttasil)</button>
+                    <button type="button" class="nav-btn" data-action="play-madd-beats" data-beats="6">6 Harakat (Lazim)</button>
+                </div>
+                <div class="madd-beat-row" id="madd-dots-container">
+                    <div class="madd-dot">1</div>
+                    <div class="madd-dot">2</div>
+                    <div class="madd-dot">3</div>
+                    <div class="madd-dot">4</div>
+                    <div class="madd-dot">5</div>
+                    <div class="madd-dot">6</div>
+                </div>
+                <div id="madd-lab-status" style="font-size:0.85em; text-align:center; color:#0f766e; font-weight:bold;">Click a button above to practice Madd timing</div>
+            </div>
+
+            <div class="lab-card">
+                <strong style="color:#1b4332;">🎨 Color-Coded Rule Examples / أمثلة ملونة</strong>
+                <p style="font-size:0.85em; color:#475569; margin:6px 0;">Click a rule to inspect & listen to its Qur'anic pronunciation:</p>
+                <div style="display:flex; gap:5px; flex-wrap:wrap;">
+                    <button type="button" class="nav-btn" data-action="show-tajweed-rule" data-rule="qalqalah">Qalqalah (قطب جد)</button>
+                    <button type="button" class="nav-btn" data-action="show-tajweed-rule" data-rule="ghunnah">Ghunnah (نّ / مّ)</button>
+                    <button type="button" class="nav-btn" data-action="show-tajweed-rule" data-rule="ikhfa">Ikhfa' (إخفاء)</button>
+                    <button type="button" class="nav-btn" data-action="show-tajweed-rule" data-rule="madd">Madd Lazim (مد لازم)</button>
+                </div>
+                <div id="tajweed-rule-display" class="tajweed-sample">
+                    قُلْ هُوَ اللَّهُ أَحَ<span class="hl-qalqalah">دْ</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px;">
+                    <span id="tajweed-rule-note" style="font-size:0.82em; color:#334155;">Qalqalah Kubra on paused Dal (دْ)</span>
+                    <button type="button" class="speak-btn" id="lab-speak-btn" data-action="speak-lab-sample">🔊 Pronounce</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Student Rules Modal -->
+    <div id="rules-modal" class="modal-box">
+        <h3 style="color: #1b4332; margin-top: 0; margin-bottom: 10px;">📖 How to Play & Scoring / قواعد اللعبة والنقاط</h3>
+        <ul style="margin: 0 0 15px 20px; padding: 0; line-height: 1.6; color: #334155; font-size: 0.92em;">
+            <li><strong>Base & Speed Scoring / النقاط وسرعة الإجابة:</strong> Correct answers earn <strong>+1 pt</strong>. Answering quickly (or locking in first in Live Zoom Mode) awards a <strong>⚡ +1 Speed Bonus</strong>!</li>
+            <li><strong>Zoom Breakout Room Mode / وضع غرف الزوم:</strong> Each Breakout Room Captain opens their team's Room Link, shares their screen with teammates to read the full bilingual question, and locks in their choice independently.</li>
+            <li><strong>Streak Multiplier / مكافأة التتابع:</strong> Reaching <strong>3+ consecutive correct answers (🔥)</strong> awards an extra <strong>+1 Streak Bonus</strong>.</li>
+            <li><strong>Final Question Finale / الجولة الختامية:</strong> The last question of every match automatically awards <strong>2x Double Points</strong>!</li>
+        </ul>
+        <div style="text-align: right;">
+            <button type="button" class="action-btn" data-action="close-rules" style="width: auto; padding: 6px 20px; margin-top: 0;">Got it / فهمت</button>
+        </div>
+    </div>
+
+    <!-- Game View (Host + Player Views) -->
+    <div id="game-view-container">
+        <div class="teams-score-board" id="live-stats">
+            <div class="team-box team1-box active-turn" id="t1-box">
+                <span id="lbl-team1">Team 1</span>: <span id="score1">0</span> 
+                <span class="streak-badge">🔥 <span id="streak1">0</span></span>
+                <span id="t1-live-status"></span>
+            </div>
+            <div class="team-box team2-box" id="t2-box">
+                <span id="lbl-team2">Team 2</span>: <span id="score2">0</span> 
+                <span class="streak-badge">🔥 <span id="streak2">0</span></span>
+                <span id="t2-live-status"></span>
+            </div>
+            <div class="timer-badge" id="timer-display">⏱️ 20s</div>
+        </div>
+
+        <!-- Team Lifelines Bar (Local Mode) -->
+        <div class="lifeline-bar" id="lifeline-bar">
+            <span style="font-size:0.85em; font-weight:bold; color:#334155;">🎯 Active Team Lifelines:</span>
+            <div style="display:flex; gap:8px;">
+                <button type="button" class="lifeline-btn" id="btn-lifeline-5050" data-action="use-5050">✂️ 50/50 Eliminate 2</button>
+                <button type="button" class="lifeline-btn" id="btn-lifeline-time" data-action="use-extra-time">❄️ +15s Extra Time</button>
+            </div>
+        </div>
+
+        <div class="timer-bar-bg" id="timer-bar-container">
+            <div class="timer-bar-fill" id="timer-bar"></div>
+        </div>
+
+        <!-- Mode Selection Menu -->
+        <div id="menu-container">
+            <h3 style="color:#1b4332; margin-top:0;">Choose Your Challenge Level / اختر مستوى التحدي</h3>
+            <p id="menu-subtitle" style="color:#64748b; font-size:0.95em;">Expanded question pools with randomized questions and shuffled answers per game.</p>
+            
+            <button type="button" class="path-btn" data-action="choose-path" data-path="easy">
+                🟢 Level 1: Core Tajweed / المستوى الأول: أساسيات التجويد
+                <span class="path-desc">Core rules: Definitions, Isti'adhah, Qalqalah, Izhar, Noon/Meem Sakinah, and Madd.</span>
+                <span class="path-topic-badge" id="badge-topics-easy">Loading topics...</span>
+            </button>
+            
+            <button type="button" class="path-btn" data-action="choose-path" data-path="advanced">
+                🔴 Level 2: Advanced Rules / المستوى الثاني: الأحكام المتقدمة
+                <span class="path-desc">Detailed rules: Letter relationships, Sakin Lamat, Ra' exceptions, and Ahkam.</span>
+                <span class="path-topic-badge" id="badge-topics-advanced">Loading topics...</span>
+            </button>
+
+            <button type="button" class="path-btn" data-action="choose-path" data-path="expert" style="border-color:#7c3aed; color:#5b21b6; background:#f5f3ff;">
+                ⭐ Level 3: Expert Recitation & Mastery / المستوى الثالث: الإتقان والختام
+                <span class="path-desc">Advanced topics: Waqf & Ibtida', connected words, Sakt, and Madd Lazim.</span>
+                <span class="path-topic-badge" id="badge-topics-expert">Loading topics...</span>
+            </button>
+        </div>
+
+        <!-- Setup Screen -->
+        <div id="setup-container">
+            <h3 style="color:#1b4332; margin-top:0;">Match Setup / إعداد المباراة</h3>
+            <p style="color:#64748b; font-size:0.95em;">Enter team names and select Single-Device or Live Zoom Room Mode</p>
+            
+            <div class="input-group">
+                <label for="input-team1">Team 1 Name / اسم الفريق الأول:</label>
+                <input type="text" id="input-team1" value="Team Al-Noor">
+            </div>
+            
+            <div class="input-group">
+                <label for="input-team2">Team 2 Name / اسم الفريق الثاني:</label>
+                <input type="text" id="input-team2" value="Team Al-Huda">
+            </div>
+
+            <div class="input-group">
+                <label>Play Mode / طريقة اللعب:</label>
+                <div class="mode-grid">
+                    <div class="mode-card selected" id="mode-card-local" data-action="select-play-mode" data-mode="local">
+                        <h4>🖥️ Single Screen (Turn-Based)</h4>
+                        <p>Teams take turns on one shared screen with 50/50 lifelines and question transfers.</p>
+                    </div>
+                    <div class="mode-card" id="mode-card-live" data-action="select-play-mode" data-mode="live">
+                        <h4>🌐 Live Zoom Room (2 Devices)</h4>
+                        <p>Generates a 4-digit Room Code so Team Captains in Zoom Breakout Rooms answer independently on their own devices.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div id="live-setup-options" style="display:none; background:#f0fdf4; border:1px solid #86efac; padding:12px; border-radius:8px; margin-bottom:12px; text-align:left;">
+                <label style="display:flex; align-items:center; gap:8px; font-weight:bold; color:#166534; cursor:pointer;">
+                    <input type="checkbox" id="chk-auto-advance" checked style="width:18px; height:18px; accent-color:#2d6a4f;">
+                    <span>⏱️ Hands-Free Auto-Advance (5s after reveal) / الانتقال التلقائي للسؤال التالي</span>
+                </label>
+                <div id="firebase-status-banner" style="font-size:0.84em; margin-top:6px; color:#0f766e;"></div>
+            </div>
+
+            <button type="button" class="action-btn" id="btn-start-match" data-action="start-game">Start Challenge Now / ابدأ التحدي الآن →</button>
+            <button type="button" class="nav-btn" data-action="restart" style="margin-top:10px; width:100%;">← Back to Level Menu / العودة</button>
+        </div>
+
+        <!-- Host Live Room Lobby (Waiting for Breakout Room Captains) -->
+        <div id="lobby-container">
+            <h3 style="color:#1b4332; margin-top:0;">🌐 Live Zoom / Multi-Device Room Lobby</h3>
+            <p style="color:#475569; font-size:0.92em; margin-bottom:4px;">Share this Room Code or paste the direct team links into Zoom Chat:</p>
+            <div class="room-code-display" id="lobby-room-code">----</div>
+            
+            <div style="display:flex; gap:8px; justify-content:center; flex-wrap:wrap; margin:10px 0;">
+                <button type="button" class="nav-btn" data-action="copy-team-link" data-team="1" style="background:#e0f2fe; color:#0369a1; border:1px solid #7dd3fc;">📋 Copy Team 1 Link / رابط الفريق 1</button>
+                <button type="button" class="nav-btn" data-action="copy-team-link" data-team="2" style="background:#fce7f3; color:#be185d; border:1px solid #f9a8d4;">📋 Copy Team 2 Link / رابط الفريق 2</button>
+            </div>
+            <div id="copy-link-toast" style="font-size:0.85em; color:#16a34a; font-weight:bold; height:20px;"></div>
+
+            <div class="lobby-teams-grid">
+                <div class="lobby-team-card" id="lobby-t1-card">
+                    <strong style="color:#0369a1; font-size:1.05em;" id="lobby-t1-name">Team 1</strong>
+                    <div id="lobby-t1-status" style="margin-top:6px; font-size:0.9em; color:#64748b;">⏳ Waiting for Captain to join...</div>
+                </div>
+                <div class="lobby-team-card" id="lobby-t2-card">
+                    <strong style="color:#be185d; font-size:1.05em;" id="lobby-t2-name">Team 2</strong>
+                    <div id="lobby-t2-status" style="margin-top:6px; font-size:0.9em; color:#64748b;">⏳ Waiting for Captain to join...</div>
+                </div>
+            </div>
+
+            <button type="button" class="action-btn" data-action="host-launch-live-match">🚀 Launch Match for Both Teams / بدء المسابقة للجميع →</button>
+            <button type="button" class="nav-btn" data-action="restart" style="margin-top:10px; width:100%;">Cancel Room / إلغاء الغرفة</button>
+        </div>
+
+        <!-- Player Join Screen (Student Phone / Breakout Room Captain) -->
+        <div id="player-join-container">
+            <h3 style="color:#1b4332; margin-top:0;">📱 Join Live Tajweed Room / الانضمام لغرفة المسابقة</h3>
+            <p style="color:#64748b; font-size:0.92em;">Enter the 4-digit Room Code shown by your teacher and choose your team:</p>
+            
+            <div class="input-group">
+                <label for="join-room-code-input">4-Digit Room Code / رمز الغرفة:</label>
+                <input type="text" id="join-room-code-input" maxlength="4" placeholder="e.g., 4821" style="text-align:center; font-size:1.4em; font-weight:bold; letter-spacing:4px;">
+            </div>
+
+            <div class="input-group">
+                <label for="join-team-select">Select Your Team / اختر فريقك:</label>
+                <select id="join-team-select">
+                    <option value="1">Team 1 / الفريق الأول</option>
+                    <option value="2">Team 2 / الفريق الثاني</option>
+                </select>
+            </div>
+
+            <button type="button" class="action-btn" data-action="player-connect-room">Connect to Room / اتصال بالغرفة →</button>
+            <button type="button" class="nav-btn" data-action="restart" style="margin-top:10px; width:100%;">← Back to Main Menu / العودة</button>
+        </div>
+
+        <!-- Player Active View (Full Question & Options for Breakout Room Screen Sharing) -->
+        <div id="player-game-container" style="text-align:left;">
+            <div id="player-header-banner" class="turn-announcement" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+                <span id="player-team-badge">Room ---- • Team 1</span>
+                <span id="player-score-badge">Score: 0 vs 0</span>
+                <span class="timer-badge" id="player-timer-badge" style="margin-left:0;">⏱️ --s</span>
+            </div>
+
+            <div id="player-waiting-box" style="text-align:center; padding:30px 15px; background:#f8fafc; border:2px dashed #cbd5e1; border-radius:10px;">
+                <h3 style="color:#1b4332; margin-top:0;">✅ Connected! / تم الاتصال بنجاح</h3>
+                <p id="player-waiting-msg" style="color:#475569; font-size:1em;">Waiting for the teacher to start Question 1...<br>Share this screen in your Zoom Breakout Room so your team can read together!</p>
+            </div>
+
+            <div id="player-question-area" style="display:none;">
+                <div class="topic-row">
+                    <div>
+                        <span id="player-topic" class="topic-tag">Topic</span>
+                        <span id="player-double-badge" class="double-pts-badge">⚡ 2x DOUBLE POINTS FINALE!</span>
+                    </div>
+                    <button type="button" class="speak-btn" data-action="player-speak-question">🔊 Read Arabic / قراءة السؤال</button>
+                </div>
+
+                <div class="question-box">
+                    <span class="q-en" id="player-q-en">Question EN</span>
+                    <span class="q-ar" id="player-q-ar" dir="rtl">السؤال بالعربية</span>
+                </div>
+
+                <div id="player-options" class="options"></div>
+                <div id="player-feedback" class="feedback"></div>
+                <div id="player-progress" class="progress-text" style="margin-top:14px; text-align:center;">Question 1 of 10</div>
+            </div>
+        </div>
+
+        <!-- Host Quiz Screen -->
+        <div id="quiz-container">
+            <div id="turn-banner" class="turn-announcement">Turn: Team 1</div>
+            <div class="topic-row">
+                <div>
+                    <span id="topic" class="topic-tag">Topic</span>
+                    <span id="double-pts-badge" class="double-pts-badge">⚡ 2x DOUBLE POINTS FINALE!</span>
+                </div>
+                <div style="display:flex; gap:6px; align-items:center;">
+                    <span id="host-room-pill" style="display:none; background:#dbeafe; color:#1e40af; padding:4px 10px; border-radius:6px; font-size:0.82em; font-weight:bold;">Room: ----</span>
+                    <button type="button" class="speak-btn" data-action="speak-question">🔊 Read Arabic / قراءة السؤال</button>
+                </div>
+            </div>
+            
+            <div id="question" class="question-box">
+                <span class="q-en" id="q-en-text">Loading question...</span>
+                <span class="q-ar" id="q-ar-text" dir="rtl">جاري تحميل السؤال...</span>
+            </div>
+            
+            <div id="options" class="options"></div>
+            
+            <div class="post-fail-actions">
+                <button type="button" id="transfer-btn" class="transfer-action-btn" data-action="trigger-transfer">🔄 Transfer Question / تحويل السؤال للفريق المنافس</button>
+                <button type="button" id="reveal-btn" class="reveal-action-btn" data-action="reveal-answer">👁️ Reveal Answer & Skip / إظهار الإجابة</button>
+            </div>
+            
+            <div id="feedback" class="feedback"></div>
+            <div class="controls">
+                <span id="progress" class="progress-text">Question 1 of 10</span>
+                <button type="button" id="next-btn" data-action="next">Next Question / السؤال التالي →</button>
+            </div>
+        </div>
+
+        <!-- Summary Screen -->
+        <div id="summary-container">
+            <h3 style="margin-bottom: 4px; color: #1b4332;">Challenge Completed! / انتهى التحدي 🏆</h3>
+            <div class="summary-score" id="winner-announcement">Winner</div>
+            <p id="final-details" style="color: #475569; font-size: 1.1em; margin: 10px 0;"></p>
+            <p id="match-meta-details" style="color: #64748b; font-size: 0.9em; margin-bottom: 15px;"></p>
+
+            <!-- Match Review & Certificate Summary -->
+            <div id="match-review-box">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 10px;">
+                    <h3 style="margin: 0; color: #1b4332; font-size: 1.05em;">📋 Match Review & Summary / مراجعة أسئلة المباراة</h3>
+                    <div class="no-print" style="display: flex; gap: 6px;">
+                        <button type="button" class="nav-btn" data-action="print-certificate" style="background: #2d6a4f; color: white;">🖨️ Print Certificate / طباعة الشهادة</button>
+                        <button type="button" class="nav-btn" data-action="export-match-report" style="background: #0284c7; color: white;">📄 Export Report / تصدير التقرير</button>
+                    </div>
+                </div>
+                <div id="match-review-list"></div>
+            </div>
+            
+            <!-- Live Cloud Leaderboard Container -->
+            <div id="live-leaderboard-box">
+                <h3 style="margin-top: 0; color: #1b4332; font-size: 1.05em;">📊 Live Cloud Leaderboard / لوحة المتصدرين السحابية</h3>
+                <table style="width: 100%; border-collapse: collapse; text-align: left;" id="leaderboard-table">
+                    <thead>
+                        <tr style="border-bottom: 2px solid #cbd5e1; color: #475569;">
+                            <th style="padding: 6px;">Rank / المركز</th>
+                            <th style="padding: 6px;">Team Name / الفريق</th>
+                            <th style="padding: 6px; text-align: right;">Score / النقاط</th>
+                        </tr>
+                    </thead>
+                    <tbody id="leaderboard-tbody"></tbody>
+                </table>
+                <button type="button" class="nav-btn" data-action="refresh-leaderboard" style="margin-top: 12px; width: 100%; background: #0284c7; color: white;">🔄 Refresh Cloud Scores / تحديث النقاط</button>
+            </div>
+
+            <button type="button" class="no-print" data-action="restart" style="background:#2d6a4f; color:#fff; border:none; padding:12px 28px; border-radius:6px; font-size:1em; font-weight:bold; cursor:pointer; font-family: inherit;">Play Again (Fresh Questions) / العب مرة أخرى</button>
+        </div>
+    </div>
+
+    <!-- Admin Dashboard Panel -->
+    <div id="admin-panel">
+        <!-- Firebase Realtime Database Config Box -->
+        <div class="section-box" style="border-color:#0284c7; background:#f0f9ff;">
+            <div class="section-title" style="color:#0369a1;">🔥 Firebase Live Zoom Room Configuration / إعدادات الربط المباشر</div>
+            <p style="font-size:0.86em; color:#334155; margin-top:0; margin-bottom:10px;">
+                Pre-configured for <strong>tajweed-halaqah</strong>. You can update the Firebase Web App <code>firebaseConfig</code> JSON below if needed:
+            </p>
+            <div class="form-group">
+                <textarea id="set-firebase-config" style="height:95px; font-family:monospace; font-size:0.85em;"></textarea>
+            </div>
+            <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                <button type="button" class="action-btn" data-action="save-firebase-config" style="margin-top:0; width:auto; background:#0284c7;">Save & Connect Firebase / حفظ وتفعيل</button>
+                <span id="admin-fb-status" style="font-size:0.88em; font-weight:bold; color:#0369a1;"></span>
+            </div>
+        </div>
+
+        <div class="section-box">
+            <div class="section-title">⚙️ Match & Security Settings / إعدادات المباراة والأمان</div>
+            <div class="form-row" style="grid-template-columns: 1fr 1fr 1fr;">
+                <div class="form-group">
+                    <label class="admin-card-label" for="set-easy-time">Level 1 Timer (s):</label>
+                    <input type="number" id="set-easy-time" value="20" min="5" max="180">
+                </div>
+                <div class="form-group">
+                    <label class="admin-card-label" for="set-adv-time">Level 2 Timer (s):</label>
+                    <input type="number" id="set-adv-time" value="30" min="5" max="180">
+                </div>
+                <div class="form-group">
+                    <label class="admin-card-label" for="set-exp-time">Level 3 Timer (s):</label>
+                    <input type="number" id="set-exp-time" value="40" min="5" max="180">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="admin-card-label" for="set-q-count">Questions per Match / عدد الأسئلة:</label>
+                    <select id="set-q-count">
+                        <option value="6">6 Questions (Quick Match)</option>
+                        <option value="10" selected>10 Questions (Standard)</option>
+                        <option value="14">14 Questions (Extended)</option>
+                        <option value="20">20 Questions (Full Pool)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="admin-card-label" for="set-admin-pass">Admin PIN / كلمة مرور المشرف:</label>
+                    <input type="text" id="set-admin-pass" value="1234" placeholder="Enter new PIN...">
+                </div>
+            </div>
+            <button type="button" class="action-btn btn-warning" data-action="save-settings" style="margin-top:5px;">Save All Settings / حفظ الإعدادات</button>
+        </div>
+
+        <!-- Topic Selection Per Level -->
+        <div class="section-box">
+            <div class="section-title">🎯 Select Active Topics per Level / اختيار المواضيع النشطة لكل مستوى</div>
+            <p style="font-size:0.86em; color:#475569; margin-top:0; margin-bottom:10px;">
+                Choose which Tajweed topics will appear during matches for each level. Unchecked topics are excluded from the randomized draw.
+            </p>
+            <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                <select id="topic-filter-track" style="flex:1; min-width:200px;">
+                    <option value="easy">Level 1: Core / أساسيات</option>
+                    <option value="advanced">Level 2: Advanced / متقدم</option>
+                    <option value="expert">Level 3: Expert / إتقان</option>
+                </select>
+                <button type="button" class="nav-btn" data-action="select-all-topics" style="background:#dcfce7; color:#166534;">✅ Select All / تحديد الكل</button>
+                <button type="button" class="nav-btn" data-action="deselect-all-topics" style="background:#fee2e2; color:#991b1b;">⬜ Clear All / إلغاء الكل</button>
+            </div>
+            <div id="topic-selection-summary" style="font-size:0.84em; font-weight:bold; color:#0f766e; margin-top:8px;"></div>
+            <div id="topic-selector-container" class="topic-selector-grid"></div>
+        </div>
+
+        <div class="section-box">
+            <div class="section-title">➕ Add Dual Language Question / إضافة سؤال ثنائي اللغة</div>
+            <div class="form-group">
+                <label class="admin-card-label" for="q-track">Target Level / المستوى:</label>
+                <select id="q-track">
+                    <option value="easy">Level 1: Core / أساسيات</option>
+                    <option value="advanced">Level 2: Advanced / متقدم</option>
+                    <option value="expert">Level 3: Expert / إتقان</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="admin-card-label" for="q-topic">Topic / الموضوع:</label>
+                <input type="text" id="q-topic" placeholder="e.g., Qalqalah / القلقلة">
+            </div>
+            <div class="form-group full">
+                <label class="admin-card-label" for="q-text-en">Question (English):</label>
+                <textarea id="q-text-en" placeholder="Question in English..."></textarea>
+            </div>
+            <div class="form-group full">
+                <label class="admin-card-label" for="q-text-ar">Question (العربية - بخط كبير واتجاه يمين):</label>
+                <textarea id="q-text-ar" dir="rtl" class="admin-ar-input" placeholder="السؤال بالعربية..."></textarea>
+            </div>
+            <div class="form-group full">
+                <label class="admin-card-label">Options (English / العربية):</label>
+            </div>
+            <div class="form-row">
+                <div class="form-group"><input type="text" id="opt-en-0" placeholder="Opt 1 (EN)"></div>
+                <div class="form-group"><input type="text" id="opt-ar-0" dir="rtl" class="admin-ar-input" placeholder="الخيار الأول (AR)"></div>
+            </div>
+            <div class="form-row">
+                <div class="form-group"><input type="text" id="opt-en-1" placeholder="Opt 2 (EN)"></div>
+                <div class="form-group"><input type="text" id="opt-ar-1" dir="rtl" class="admin-ar-input" placeholder="الخيار الثاني (AR)"></div>
+            </div>
+            <div class="form-row">
+                <div class="form-group"><input type="text" id="opt-en-2" placeholder="Opt 3 (EN)"></div>
+                <div class="form-group"><input type="text" id="opt-ar-2" dir="rtl" class="admin-ar-input" placeholder="الخيار الثالث (AR)"></div>
+            </div>
+            <div class="form-row">
+                <div class="form-group"><input type="text" id="opt-en-3" placeholder="Opt 4 (EN)"></div>
+                <div class="form-group"><input type="text" id="opt-ar-3" dir="rtl" class="admin-ar-input" placeholder="الخيار الرابع (AR)"></div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="admin-card-label" for="q-correct">Correct Option Index / الخيار الصحيح (0-3):</label>
+                    <select id="q-correct">
+                        <option value="0">Option 1 / الخيار الأول</option>
+                        <option value="1">Option 2 / الخيار الثاني</option>
+                        <option value="2">Option 3 / الخيار الثالث</option>
+                        <option value="3">Option 4 / الخيار الرابع</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="admin-card-label" for="q-exp">Explanation / التوضيح:</label>
+                    <input type="text" id="q-exp" placeholder="Explanation in EN & AR...">
+                </div>
+            </div>
+            <button type="button" class="action-btn" data-action="add-question" style="margin-top:5px;">Save Dual-Language Question / حفظ السؤال</button>
+        </div>
+
+        <div class="section-box">
+            <div class="section-title">🗂️ Manage Custom Questions / إدارة الأسئلة المخصصة</div>
+            <div class="form-group">
+                <label class="admin-card-label" for="manage-track-select">Filter by Level / تصفية حسب المستوى:</label>
+                <select id="manage-track-select">
+                    <option value="easy">Level 1: Core / أساسيات</option>
+                    <option value="advanced">Level 2: Advanced / متقدم</option>
+                    <option value="expert">Level 3: Expert / إتقان</option>
+                </select>
+            </div>
+            <div id="custom-questions-list"></div>
+        </div>
+
+        <div class="section-box">
+            <div class="section-title">💾 Custom Questions Backup / النسخ الاحتياطي</div>
+            <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                <button type="button" class="action-btn" data-action="export-questions" style="flex:1; margin-top:0; background:#0284c7;">📥 Export Backup</button>
+                <button type="button" class="action-btn" data-action="trigger-import" style="flex:1; margin-top:0; background:#0d9488;">📤 Import Backup</button>
+                <input type="file" id="import-file-input" accept=".json" style="display:none;">
+            </div>
+        </div>
+
+        <div id="admin-alert" class="alert-box">Saved successfully!</div>
+    </div>
+</div>
+
+<script>
+(function() {
+    // =========================================================================
+    // Your Firebase Project Configuration (tajweed-halaqah)
+    // =========================================================================
+    var DEFAULT_FIREBASE_CONFIG = {
+        apiKey: "AIzaSyC1bROVnLqWsU4WM7NU8obEWcIeCWDCPHI",
+        authDomain: "tajweed-halaqah.firebaseapp.com",
+        databaseURL: "https://tajweed-halaqah-default-rtdb.firebaseio.com",
+        projectId: "tajweed-halaqah",
+        storageBucket: "tajweed-halaqah.firebasestorage.app",
+        messagingSenderId: "385496294704",
+        appId: "1:385496294704:web:218f827c2a7e5a91a114f5",
+        measurementId: "G-Z646CGD3P1"
+    };
+
+    var firebaseDb = null;
+    var firebaseAnalytics = null;
+    var isFirebaseReady = false;
+
+    function initFirebaseFromConfig(cfg) {
+        if (!cfg || !cfg.databaseURL || !cfg.apiKey) {
+            isFirebaseReady = false;
+            return false;
+        }
+        try {
+            if (!firebase.apps.length) {
+                firebase.initializeApp(cfg);
+            }
+            firebaseDb = firebase.database();
+            if (typeof firebase.analytics === "function" && cfg.measurementId) {
+                try { firebaseAnalytics = firebase.analytics(); } catch (aErr) {}
+            }
+            isFirebaseReady = true;
+            return true;
+        } catch (err) {
+            console.error("Firebase init error:", err);
+            isFirebaseReady = false;
+            return false;
+        }
+    }
+
+    // Load saved Firebase config from localStorage or use DEFAULT_FIREBASE_CONFIG
+    var activeFbConfig = DEFAULT_FIREBASE_CONFIG;
+    var savedFbRaw = localStorage.getItem("tajweed_firebase_config");
+    if (savedFbRaw) {
+        try {
+            var parsedCfg = JSON.parse(savedFbRaw);
+            if (parsedCfg && parsedCfg.databaseURL && parsedCfg.apiKey) {
+                activeFbConfig = parsedCfg;
+            }
+        } catch (e) {}
+    }
+    initFirebaseFromConfig(activeFbConfig);
+    document.getElementById("set-firebase-config").value = JSON.stringify(activeFbConfig, null, 2);
+
+    function updateFirebaseStatusBadges() {
+        var adminStatus = document.getElementById("admin-fb-status");
+        var setupStatus = document.getElementById("firebase-status-banner");
+        if (isFirebaseReady) {
+            if (adminStatus) { adminStatus.textContent = "✅ Connected to tajweed-halaqah Realtime Database"; adminStatus.style.color = "#16a34a"; }
+            if (setupStatus) { setupStatus.textContent = "✅ Firebase Connected (tajweed-halaqah) — Ready to host a Live Room Code!"; setupStatus.style.color = "#166534"; }
+        } else {
+            if (adminStatus) { adminStatus.textContent = "⚠️ Not configured yet"; adminStatus.style.color = "#d97706"; }
+            if (setupStatus) { setupStatus.textContent = "⚠️ Firebase not configured yet. Go to Admin ⚙️ to paste your Firebase Config first."; setupStatus.style.color = "#b45309"; }
+        }
+    }
+    updateFirebaseStatusBadges();
+
+    var adminPassword = localStorage.getItem("tajweed_admin_pass") || "1234";
+    var APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxU5whfGB2N5VeNsyJEhM1Ax_IhdDODHGLCkF6-urtpXk4BK5qaBbIUBqbsdQtC2my9xQ/exec";
+    var isCssFullscreenActive = false;
+    var isMuted = false;
+    var maddBeatTimer = null;
+
+    var tajweedLabSamples = {
+        qalqalah: {
+            html: 'قُلْ هُوَ اللَّهُ أَحَ<span class="hl-qalqalah">دْ</span>',
+            tts: 'قُلْ هُوَ اللَّهُ أَحَدْ',
+            note: 'Qalqalah Kubra: Strong echoing bounce on paused Dal (دْ).'
+        },
+        ghunnah: {
+            html: 'إِ<span class="hl-ghunnah">نَّ</span> اللَّهَ غَفُورٌ رَحِيمٌ',
+            tts: 'إِنَّ اللَّهَ غَفُورٌ رَحِيمٌ',
+            note: 'Complete Ghunnah: Hold nasal resonance for 2 vowel counts on Noon Mushaddadah (نَّ).'
+        },
+        ikhfa: {
+            html: 'مِ<span class="hl-ikhfa">نْ شَ</span>رِّ مَا خَلَقَ',
+            tts: 'مِنْ شَرِّ مَا خَلَقَ',
+            note: 'True Ikhfa\': Hide Noon Sakinah between Izhar and Idgham with nasal Ghunnah before Sheen (ش).'
+        },
+        madd: {
+            html: 'وَلَا الضَّ<span class="hl-madd">آ</span>لِّينَ',
+            tts: 'وَلَا الضَّالِّينَ',
+            note: 'Madd Lazim Kalimi Muthaqal: Stretch the Alif for 6 obligatory vowel counts before doubled Lam.'
+        }
+    };
+    var currentLabTts = tajweedLabSamples.qalqalah.tts;
+
+    function speakArabic(text) {
+        if (!('speechSynthesis' in window)) {
+            alert("Text-to-Speech is not supported in this browser.");
+            return;
+        }
+        window.speechSynthesis.cancel();
+        var cleanText = text.replace(/[()]/g, "");
+        var utterance = new SpeechSynthesisUtterance(cleanText);
+        utterance.lang = "ar-SA";
+        utterance.rate = 0.85;
+        window.speechSynthesis.speak(utterance);
+    }
+
+    function syncScoreToSheet(teamName, currentScore) {
+        if (!APPS_SCRIPT_URL || !teamName || (teamName.toString().includes("T") && teamName.toString().includes("Z"))) return;
+        fetch(APPS_SCRIPT_URL, {
+            method: "POST",
+            mode: "no-cors",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ teamName: teamName, score: currentScore })
+        }).catch(function(error) { console.error("Score sync error:", error); });
+    }
+
+    function fetchLiveLeaderboard() {
+        if (!APPS_SCRIPT_URL) return;
+        var tbody = document.getElementById("leaderboard-tbody");
+        if (!tbody) return;
+        
+        tbody.innerHTML = "";
+        var loadingRow = document.createElement("tr");
+        var loadingCell = document.createElement("td");
+        loadingCell.colSpan = 3;
+        loadingCell.style.padding = "10px";
+        loadingCell.style.textAlign = "center";
+        loadingCell.style.color = "#64748b";
+        loadingCell.textContent = "Loading scores... / جاري تحميل النتائج...";
+        loadingRow.appendChild(loadingCell);
+        tbody.appendChild(loadingRow);
+
+        fetch(APPS_SCRIPT_URL)
+            .then(function(response) { return response.json(); })
+            .then(function(data) {
+                tbody.innerHTML = "";
+                if (!data || data.length === 0) {
+                    var emptyRow = document.createElement("tr");
+                    var emptyCell = document.createElement("td");
+                    emptyCell.colSpan = 3;
+                    emptyCell.style.padding = "10px";
+                    emptyCell.style.textAlign = "center";
+                    emptyCell.textContent = "No scores recorded yet.";
+                    emptyRow.appendChild(emptyCell);
+                    tbody.appendChild(emptyRow);
+                    return;
+                }
+                for (var i = 0; i < data.length; i++) {
+                    var row = document.createElement("tr");
+                    row.style.borderBottom = "1px solid #e2e8f0";
+
+                    var rankCell = document.createElement("td");
+                    rankCell.style.padding = "8px";
+                    rankCell.style.fontWeight = "bold";
+                    rankCell.style.color = "#2d6a4f";
+                    rankCell.textContent = "#" + (i + 1);
+
+                    var nameCell = document.createElement("td");
+                    nameCell.style.padding = "8px";
+                    nameCell.style.color = "#1e293b";
+                    nameCell.textContent = data[i].teamName;
+
+                    var scoreCell = document.createElement("td");
+                    scoreCell.style.padding = "8px";
+                    scoreCell.style.textAlign = "right";
+                    scoreCell.style.fontWeight = "bold";
+                    scoreCell.style.color = "#0369a1";
+                    scoreCell.textContent = data[i].score;
+
+                    row.appendChild(rankCell);
+                    row.appendChild(nameCell);
+                    row.appendChild(scoreCell);
+                    tbody.appendChild(row);
+                }
+            })
+            .catch(function(err) {
+                console.error("Failed to fetch leaderboard:", err);
+                tbody.innerHTML = "";
+                var errRow = document.createElement("tr");
+                var errCell = document.createElement("td");
+                errCell.colSpan = 3;
+                errCell.style.padding = "10px";
+                errCell.style.color = "#dc3545";
+                errCell.textContent = "Could not load cloud scores.";
+                errRow.appendChild(errCell);
+                tbody.appendChild(errRow);
+            });
+    }
+
+    var audioCtx = null;
+    function playSound(type) {
+        if (isMuted) return;
+        try {
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            var osc = audioCtx.createOscillator();
+            var gainNode = audioCtx.createGain();
+            osc.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            var now = audioCtx.currentTime;
+            if (type === 'tick') {
+                osc.frequency.setValueAtTime(440, now);
+                gainNode.gain.setValueAtTime(0.1, now);
+                gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+                osc.start(now); osc.stop(now + 0.1);
+            } else if (type === 'beat') {
+                osc.frequency.setValueAtTime(523.25, now);
+                gainNode.gain.setValueAtTime(0.14, now);
+                gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+                osc.start(now); osc.stop(now + 0.18);
+            } else if (type === 'correct') {
+                osc.frequency.setValueAtTime(587.33, now); 
+                osc.frequency.setValueAtTime(880, now + 0.15); 
+                gainNode.gain.setValueAtTime(0.15, now);
+                gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+                osc.start(now); osc.stop(now + 0.4);
+            } else if (type === 'wrong') {
+                osc.frequency.setValueAtTime(220, now);
+                osc.frequency.setValueAtTime(150, now + 0.15);
+                gainNode.gain.setValueAtTime(0.15, now);
+                gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+                osc.start(now); osc.stop(now + 0.35);
+            }
+        } catch(e) {}
+    }
+
+    function playMaddMetronome(beats) {
+        clearInterval(maddBeatTimer);
+        var dots = document.querySelectorAll("#madd-dots-container .madd-dot");
+        var statusEl = document.getElementById("madd-lab-status");
+        for (var i = 0; i < dots.length; i++) {
+            dots[i].classList.remove("lit");
+            dots[i].style.opacity = (i < beats) ? "1" : "0.25";
+        }
+        var currentBeat = 0;
+        function step() {
+            for (var j = 0; j < dots.length; j++) dots[j].classList.remove("lit");
+            if (currentBeat < beats) {
+                dots[currentBeat].classList.add("lit");
+                playSound('beat');
+                statusEl.textContent = "Counting Harakah " + (currentBeat + 1) + " of " + beats + "...";
+                currentBeat++;
+            } else {
+                clearInterval(maddBeatTimer);
+                statusEl.textContent = "Completed " + beats + " Harakat! / اكتمل المد بمقدار " + beats + " حركات";
+            }
+        }
+        step();
+        maddBeatTimer = setInterval(step, 550);
+    }
+
+    var dualLanguagePaths = {
+        easy: [
+            {
+                topic: "Tajweed Definitions / تعريف التجويد",
+                qEn: "What is the linguistic meaning of (Tajweed)?",
+                qAr: "ما هو المعنى اللغوي لكلمة (التجويد)؟",
+                options: [
+                    { en: "Fast recitation", ar: "القراءة السريعة" },
+                    { en: "Improvement and making something good", ar: "التحسين والإتيان بالشيء جيداً" },
+                    { en: "Complete memorization", ar: "الحفظ التام" },
+                    { en: "Whispering letters clearly", ar: "همس الحروف بوضوح" }
+                ],
+                correct: 1,
+                explanation: "Linguistically, Tajweed means improvement or perfection. / لغةً، التجويد هو التحسين والإتقان."
+            },
+            {
+                topic: "Recitation Errors / أخطاء التلاوة",
+                qEn: "What is (Lahn Jali - Manifest Error)?",
+                qAr: "ما هو (اللحن الجلي)؟",
+                options: [
+                    { en: "A minor pitch mistake", ar: "خطأ خفيف في النغمة" },
+                    { en: "An error that alters a letter or vowel, changing meaning or grammar rules", ar: "خطأ يغير بنية الكلمة أو يخالف قواعد العربية ويغير المعنى" },
+                    { en: "Reading very fast", ar: "القراءة بسرعة زائدة" },
+                    { en: "Omitting a subtle nasal sound", ar: "إخفاء الغنة قليلاً" }
+                ],
+                correct: 1,
+                explanation: "Lahn Jali is an apparent error that violates Arabic grammar rules or alters word structures. / اللحن الجلي هو خطأ ظاهر يخالف قواعد العربية ويخل بمبنى الكلمة."
+            },
+            {
+                topic: "Isti'adhah & Basmalah / الاستعاذة والبسملة",
+                qEn: "When starting recitation from the beginning of a regular Surah, what is the standard correct order?",
+                qAr: "عند البدء بتلاوة سورة من أولها (عدا براءة)، ما هو الترتيب الصحيح المعتاد؟",
+                options: [
+                    { en: "Basmalah then Isti'adhah", ar: "البسملة ثم الاستعاذة" },
+                    { en: "Isti'adhah then Basmalah then the Surah", ar: "الاستعاذة ثم البسملة ثم السورة" },
+                    { en: "The Surah then Basmalah", ar: "السورة ثم البسملة" },
+                    { en: "Reciting the Surah alone", ar: "قراءة السورة وحدها" }
+                ],
+                correct: 1,
+                explanation: "The standard order is Isti'adhah, then Basmalah, then starting the Surah. / الترتيب القياسي هو الاستعاذة ثم البسملة ثم البدء بالسورة."
+            },
+            {
+                topic: "Articulation Points / مخارج الحروف",
+                qEn: "Where does the sound of (Ghunnah - Nasal sound) originate?",
+                qAr: "من أين يخرج صوت (الغنة)؟",
+                options: [
+                    { en: "From the Al-Jawf (empty mouth space)", ar: "من الجوف" },
+                    { en: "From the Khayshum (nasal cavity)", ar: "من الخيشوم (الأنف)" },
+                    { en: "From the deepest throat", ar: "من أقصى الحلق" },
+                    { en: "From the lips", ar: "من الشفتين" }
+                ],
+                correct: 1,
+                explanation: "The nasal cavity (Khayshum) is the articulation point for Ghunnah. / الخيشوم هو مخرج الغنة."
+            },
+            {
+                topic: "Qalqalah / القلقلة",
+                qEn: "What are the letters of Qalqalah (echoing sound upon sukoon)?",
+                qAr: "ما هي حروف القلقلة (اضطراب الصوت عند السكون)؟",
+                options: [
+                    { en: "Yar-maloon", ar: "يرملون" },
+                    { en: "Qutb Jad", ar: "قطب جد" },
+                    { en: "Fahathahu Shakhsun Sakat", ar: "فحثه شخص سكت" },
+                    { en: "Khass Daght Qaz", ar: "خص ضغط قظ" }
+                ],
+                correct: 1,
+                explanation: "The five Qalqalah letters are grouped in: (Qutb Jad). / حروف القلقلة خمسة مجتمعة في قولهم (قطب جد)."
+            },
+            {
+                topic: "Noon Sakinah: Izhar / الإظهار الحلقي",
+                qEn: "If Noon Sakinah or Tanween is followed by one of the throat letters, what is the rule?",
+                qAr: "إذا جاء بعد النون الساكنة أو التنوين أحد حروف الحلق الستة، فما هو الحكم؟",
+                options: [
+                    { en: "Izhar Halqi (clear pronunciation without ghunnah)", ar: "الإظهار الحلقي (نطق النون بوضوح دون غنة زائدة)" },
+                    { en: "Idgham (Merging)", ar: "الإدغام" },
+                    { en: "Iqlab (Conversion)", ar: "الإقلاب" },
+                    { en: "Ikhfa' (Hiding)", ar: "الإخفاء" }
+                ],
+                correct: 0,
+                explanation: "Izhar Halqi means pronouncing the Noon clearly without extra ghunnah. / الإظهار الحلقي يعني إخراج النون من مخرجها بغير غنة زائدة."
+            },
+            {
+                topic: "Noon Sakinah: Iqlab / الإقلاب",
+                qEn: "How many letters are there for Iqlab (converting Noon Sakinah into a hidden Meem)?",
+                qAr: "كم عدد حروف الإقلاب (قلب النون الساكنة ميماً مخفاة)؟",
+                options: [
+                    { en: "One letter (Baa - ب)", ar: "حرف واحد وهو (الباء)" },
+                    { en: "Two letters", ar: "حرفان" },
+                    { en: "Four letters", ar: "أربعة حروف" },
+                    { en: "Six letters", ar: "ستة حروف" }
+                ],
+                correct: 0,
+                explanation: "Iqlab has only one letter, which is Baa (ب). / الإقلاب له حرف واحد فقط وهو الباء (ب)."
+            },
+            {
+                topic: "Emphatic Noon & Meem / النون والميم المشددتان",
+                qEn: "What must always be observed when pronouncing a doubled Noon (نّ) or Meem (مّ)?",
+                qAr: "ما الذي يجب مراعاته دائماً عند النطق بالنون المشددة (نّ) أو الميم المشددة (مّ)؟",
+                options: [
+                    { en: "Applying severe Qalqalah", ar: "قلقلتهما بشدة" },
+                    { en: "Giving them complete Ghunnah for two vowel counts", ar: "إعطاؤهما غنة كاملة بمقدار حركتين" },
+                    { en: "Always making them light", ar: "ترقيقهما دائماً" },
+                    { en: "Stopping on them for a long time", ar: "الوقف عليهما طويلاً" }
+                ],
+                correct: 1,
+                explanation: "A doubled Noon and Meem must always be accompanied by a full Ghunnah of two beats. / يجب إظهار الغنة فيهما أكمل ما تكون بمقدار حركتين."
+            },
+            {
+                topic: "Meem Sakinah Rules / أحكام الميم الساكنة",
+                qEn: "What is the rule when Meem Sakinah (مْ) is followed by the letter Baa (ب)?",
+                qAr: "ما هو الحكم إذا جاء بعد الميم الساكنة (مْ) حرف الباء (ب)؟",
+                options: [
+                    { en: "Izhar Shafawi", ar: "إظهار شفوي" },
+                    { en: "Idgham Shafawi", ar: "إدغام شفوي" },
+                    { en: "Ikhfa' Shafawi", ar: "إخفاء شفوي" },
+                    { en: "Iqlab", ar: "إقلاب" }
+                ],
+                correct: 2,
+                explanation: "When Meem Sakinah meets Baa, the rule is Ikhfa' Shafawi with ghunnah. / إذا التقت الميم الساكنة بالباء فالحكم هو الإخفاء الشفوي مع الغنة."
+            },
+            {
+                topic: "Natural Madd / المد الطبيعي",
+                qEn: "How many vowel counts (Harakat) is Natural Madd (Original Prolongation) stretched?",
+                qAr: "كم حركة يُمد المد الطبيعي (الأصلي)؟",
+                options: [
+                    { en: "One count", ar: "حركة واحدة" },
+                    { en: "Two counts", ar: "حركتان" },
+                    { en: "Four counts", ar: "أربع حركات" },
+                    { en: "Six counts", ar: "ست حركات" }
+                ],
+                correct: 1,
+                explanation: "Natural Madd is prolonged by two counts and depends on no specific cause. / المد الطبيعي يمد بمقدار حركتين ولا يتوقف على سبب."
+            },
+            {
+                topic: "Noon Sakinah: Idgham / الإدغام بغنة",
+                qEn: "Which letters form the group of Idgham with Ghunnah (Yar-mun)?",
+                qAr: "ما هي حروف الإدغام بغنة (كلمة يَرْمُونَ)؟",
+                options: [
+                    { en: "Yaa, Noon, Meem, Waw", ar: "الياء والنون والميم والواو" },
+                    { en: "Lam and Raa", ar: "اللام والراء" },
+                    { en: "Hamza, Ha, Ain, Hha", ar: "الهمزة والهاء والعين والحاء" },
+                    { en: "Baa exclusively", ar: "الباء وحدها" }
+                ],
+                correct: 0,
+                explanation: "Yar-mun (Yaa, Noon, Meem, Waw) letters make up Idgham with Ghunnah. / حروف الإدغام بغنة هي المجموعة في كلمة (يرمن)."
+            },
+            {
+                topic: "Noon Sakinah: Ikhfa' / الإخفاء الحقيقي",
+                qEn: "What happens to the sound of Noon Sakinah during True Ikhfa' (Hiding)?",
+                qAr: "كيف يُنطق بالنون الساكنة عند الإخفاء الحقيقي؟",
+                options: [
+                    { en: "Pronounced completely clearly with a click", ar: "تُظهر بوضوح تام مع قلقلة" },
+                    { en: "Pronounced in a state between Izhar and Idgham, keeping ghunnah", ar: "تُنطق بحالة بين الإظهار والإدغام مع بقاء الغنة" },
+                    { en: "Turned entirely into a Baa",  ar: "تُقلب ميماً خالصة" },
+                    { en: "Dropped completely", ar: "تُحذف تماماً" }
+                ],
+                correct: 1,
+                explanation: "Ikhfa' is a middle state between clearing and merging, preserving nasal sound. / الإخفاء هو النطق بالحرف بصفة بين الإظهار والإدغام عارٍ عن التشديد مع بقاء الغنة."
+            },
+            {
+                topic: "Meem Sakinah: Izhar Shafawi / الإظهار الشفوي",
+                qEn: "How many letters are in Izhar Shafawi (Clear Meem) when Meem Sakinah meets them (excluding Meem and Baa)?",
+                qAr: "كم عدد حروف الإظهار الشفوي للميم الساكنة (عدا الميم والباء)؟",
+                options: [
+                    { en: "26 letters", ar: "26 حرفاً" },
+                    { en: "15 letters", ar: "15 حرفاً" },
+                    { en: "6 letters", ar: "6 حروف" },
+                    { en: "4 letters", ar: "4 حروف" }
+                ],
+                correct: 0,
+                explanation: "After excluding Meem and Baa, the remaining 26 alphabet letters form Izhar Shafawi. / حروف الإظهار الشفوي 26 حرفاً ما عدا الميم والباء."
+            },
+            {
+                topic: "Meem Sakinah: Idgham Shafawi / الإدغام الشفوي",
+                qEn: "What is the rule when Meem Sakinah (مْ) is followed by a vowelled Meem (مَ)?",
+                qAr: "ما هو الحكم إذا جاء بعد الميم الساكنة (مْ) ميم متحركة (مَ)؟",
+                options: [
+                    { en: "Izhar Shafawi", ar: "إظهار شفوي" },
+                    { en: "Idgham Shafawi (Merging with complete Ghunnah)", ar: "إدغام شفوي (إدغام الميم في الميم مع الغنة)" },
+                    { en: "Ikhfa' Shafawi", ar: "إخفاء شفوي" },
+                    { en: "Qalqalah", ar: "قلقلة" }
+                ],
+                correct: 1,
+                explanation: "Merging identical Meem letters is called Idgham Shafawi or Mutamathilain Saghir. / تُدغم الميم الساكنة في الميم المتحركة بغنة كاملة ويسمى إدغاماً شفويّاً."
+            },
+            {
+                topic: "Madd Tabii / المد الطبيعي الملحق",
+                qEn: "What is (Madd al-Tamkeen - Extension of Empowerment)?",
+                qAr: "ما هو (مد التمكين)؟",
+                options: [
+                    { en: "Extension when two Waws or two Yaas meet where one is vowelled", ar: "التقاء واوين أو يائين الأولى مدية والثانية متحركة" },
+                    { en: "Prolongation due to Hamza", ar: "المد بسبب الهمز" },
+                    { en: "Prolongation due to Sukoon", ar: "المد بسبب السكون" },
+                    { en: "Stopping on noon", ar: "الوقف على النون" }
+                ],
+                correct: 0,
+                explanation: "Madd Tamkeen empowers the soft letter so it is not swallowed, such as in (النبِيِّينَ). / مد التمكين يقع في الياءين أو الواوين ليتمكن حرف المد من الظهور."
+            },
+            {
+                topic: "Madd Badal / مد البدل",
+                qEn: "What is (Madd Badal - Substituted Prolongation)?",
+                qAr: "ما هو (مد البدل)؟",
+                options: [
+                    { en: "When a Hamza precedes a madd letter in the same word", ar: "أن يتقدم الهمز على حرف المد في كلمة" },
+                    { en: "When stopping on a Fatha", ar: "الوقف على الفتحة" },
+                    { en: "Switching Surat letters", ar: "تبديل الحروف" },
+                    { en: "Extending for 6 counts", ar: "المد ست حركات" }
+                ],
+                correct: 0,
+                explanation: "Madd Badal occurs when Hamza comes before a letter of prolongation (e.g., آمَنُوا). / مد البدل هو أن يتقدم الهمز على حرف المد نحو (آمنوا)."
+            },
+            {
+                topic: "Tanween Rules / أحكام التنوين",
+                qEn: "What is Tanween in Arabic grammar and Tajweed?",
+                qAr: "ما هو التنوين لغةً واصطلاحاً في التجويد؟",
+                options: [
+                    { en: "A permanent letter written in the Quran text", ar: "حرف أصلي ثابت في رسم المصحف" },
+                    { en: "An extra sakin Noon sound attached to the end of a noun phonetically", ar: "نون ساكنة زائدة تلحق آخر الاسم لفظاً لا خطّاً" },
+                    { en: "A vowel symbol for Shaddah", ar: "حركة التشديد" },
+                    { en: "A sign for pausing", ar: "علامة الوقف" }
+                ],
+                correct: 1,
+                explanation: "Tanween is a phonetic extra sakin Noon pronounced at noun endings but not written as a letter. / التنوين نون ساكنة زائدة تلحق أواخر الأسماء لفظاً لا خطّاً."
+            },
+            {
+                topic: "Sifat Huruf / الصفات اللازمة",
+                qEn: "What are (Sifat Lazimah - Permanent Attributes) that have no opposite counterpart?",
+                qAr: "ما هي الصفات التي لا ضد لها؟",
+                options: [
+                    { en: "Al-Safir, Qalqalah, Al-Leen, Al-Inhiraf, Al-Takrir, Al-Tafasshi, Al-Istitalah", ar: "الصفير، القلقلة، اللين، الانحراف، التكرير، التفشي، الاستطالة" },
+                    { en: "Hams and Jahr", ar: "الهمس والجهر" },
+                    { en: "Shiddah and Rakhawah", ar: "الشدة والرخاوة" },
+                    { en: "Istila and Istifal", ar: "الاستعلاء والاستفال" }
+                ],
+                correct: 0,
+                explanation: "Attributes without opposites include Qalqalah, Safir, Inhiraf, Takrir, Tafasshi, and Istitalah. / الصفات التي لا ضد لها سبع وهي: الصفير، القلقلة، اللين، الانحراف، التكرير، التفشي، الاستطالة."
+            },
+            {
+                topic: "Tafkheem & Tarqeeq / تفخيم الراء",
+                qEn: "When is the letter Raa (ر) pronounced with Tarqeeq (Light/Thin sound)?",
+                qAr: "متى تُرقق الراء (ر) وجوباً؟",
+                options: [
+                    { en: "When it has a Dammah or Fatha", ar: "إذا كانت مضمومة أو مفتوحة" },
+                    { en: "When it is vowelled with a Kasrah or sakin preceded by an original Kasrah", ar: "إذا كانت مكسورة أو ساكنة وقبلها كسرة أصلية متصلة" },
+                    { en: "When followed by an elevated letter", ar: "إذا جاء بعدها حرف استعلاء" },
+                    { en: "Always heavy", ar: "مفخمة دائماً" }
+                ],
+                correct: 1,
+                explanation: "Raa is thinned when it is directly vowelled with kasrah or sakin preceded by a kasrah. / ترقق الراء إذا كانت مكسورة أو ساكنة وقبلها كسرة أصلية."
+            },
+            {
+                topic: "Waqf Signs / رموز الوقف في المصحف",
+                qEn: "What does the small letter (ج) above a verse indicate in the Uthmani Mushaf?",
+                qAr: "ما دلالة رمز الوقف الجائز (ج) في المصحف الشريف؟",
+                options: [
+                    { en: "Waqf Lazim (Mandatory pause)", ar: "وقف لازم" },
+                    { en: "Waqf Ja'iz (Permissible pause, both stopping and continuing are equal)", ar: "وقف جائز مستوي الطرفين (الوقف والوصل سيان)" },
+                    { en: "Waqf Mamnu' (Forbidden pause)", ar: "وقف ممنوع" },
+                    { en: "Sakt pause", ar: "سكت لطيف" }
+                ],
+                correct: 1,
+                explanation: "The letter (ج) denotes Waqf Ja'iz where stopping or continuing are equally allowed. / حرف (ج) يرمز للوقف الجائز حيث يستوي الوصل والوقف."
+            }
+        ],
+        advanced: [
+            {
+                topic: "Recitation Ranks / مراتب التلاوة",
+                qEn: "What is the slowest and most contemplative rank of recitation used for teaching?",
+                qAr: "ما هي أبطأ مراتب التلاوة وأجودها لغرض التعليم والتدريب؟",
+                options: [
+                    { en: "Al-Hadr", ar: "الحدر" },
+                    { en: "Al-Tadweer", ar: "التدوير" },
+                    { en: "Al-Tahqiq", ar: "التحقيق" },
+                    { en: "Regular Tarteel", ar: "الترتيل العادي" }
+                ],
+                correct: 2,
+                explanation: "Tahqiq is the slowest and most precise rank, used for learning and correcting errors. / التحقيق هي المرتبة الأبطأ والأدق، وتُستعمل للتعليم وتصحيح الأخطاء."
+            },
+            {
+                topic: "Surah Al-Imran Openings / فواتح آل عمران",
+                qEn: "How many valid ways of connection and pause exist between Isti'adhah, Basmalah, and the beginning of Surah Al-Imran?",
+                qAr: "كم وجهاً جائزاً للوصل والقطع بين الاستعاذة والبسملة وأول سورة آل عمران؟",
+                options: [
+                    { en: "Two ways", ar: "وجهان" },
+                    { en: "Four ways", ar: "أربعة أوجه" },
+                    { en: "Six ways", ar: "ستة أوجه" },
+                    { en: "Eight ways", ar: "ثمانية أوجه" }
+                ],
+                correct: 2,
+                explanation: "There are 6 valid ways (3 standard Isti'adhah/Basmalah ways multiplied by 2 ways of stretching or shortening Meem before Allah). / هناك 6 أوجه صحيحة جائزة لمد الميم أو قصرها عند التقاء الساكنين مع أوجه الاستعاذة والبسملة."
+            },
+            {
+                topic: "Letter Attributes / صفات الحروف",
+                qEn: "What is the attribute opposite to (Al-Hams - flow of breath)?",
+                qAr: "ما هي الصفة المضادة لصفة (الهمس - جريان النفس)؟",
+                options: [
+                    { en: "Al-Jahr (suppression of breath)", ar: "الجهر (انحباس جريان النفس)" },
+                    { en: "Ash-Shiddah", ar: "الشدة" },
+                    { en: "Al-Istila'", ar: "الاستعلاء" },
+                    { en: "Al-Itbaq", ar: "الإطباق" }
+                ],
+                correct: 0,
+                explanation: "Al-Jahr is the opposite of Hams, meaning the suppression of breath due to strong reliance on the articulation point. / الجهر هو ضد الهمس، ويعني انحباس النفس لقوة الاعتماد على المخرج."
+            },
+            {
+                topic: "Noon Sakinah: Idgham / الإدغام بغير غنة",
+                qEn: "Which two letters require (Idgham without Ghunnah) when meeting Noon Sakinah or Tanween?",
+                qAr: "ما هما الحرفان اللذان يجب عندهما (الإدغام بغير غنة) مع النون الساكنة والتنوين؟",
+                options: [
+                    { en: "Yaa and Waw", ar: "الياء والواو" },
+                    { en: "Meem and Noon", ar: "الميم والنون" },
+                    { en: "Lam and Raa", ar: "اللام والراء" },
+                    { en: "Baa and Meem", ar: "الباء والميم" }
+                ],
+                correct: 2,
+                explanation: "Lam (ل) and Raa (ر) cause complete idgham with no extra ghunnah. / اللام (ل) والراء (ر) حروف الإدغام الكامل بغير غنة."
+            },
+            {
+                topic: "Noon Sakinah: Ikhfa' / الإخفاء الحقيقي",
+                qEn: "How many letters are in True Ikhfa' (Hidden Pronunciation)?",
+                qAr: "كم عدد حروف الإخفاء الحقيقي؟",
+                options: [
+                    { en: "6 letters", ar: "6 حروف" },
+                    { en: "10 letters", ar: "10 حروف" },
+                    { en: "15 letters", ar: "15 حرفاً" },
+                    { en: "28 letters", ar: "28 حرفاً" }
+                ],
+                correct: 2,
+                explanation: "True Ikhfa' has 15 letters after excluding Izhar, Idgham, and Iqlab letters. / حروف الإخفاء الحقيقي 15 حرفاً وهي الباقية بعد حروف الإظهار والإدغام والإقلاب."
+            },
+            {
+                topic: "Sakeneh Lamat / اللامات الساكنة",
+                qEn: "How many Moon letters (Al-Qamariyyah) require clear pronunciation of the definite article Lam?",
+                qAr: "كم عدد الحروف القمرية التي يجب معها إظهار لام التعريف الساكنة؟",
+                options: [
+                    { en: "10 letters", ar: "10 حروف" },
+                    { en: "14 letters", ar: "14 حرفاً" },
+                    { en: "18 letters", ar: "18 حرفاً" },
+                    { en: "28 letters", ar: "28 حرفاً" }
+                ],
+                correct: 1,
+                explanation: "Moon letters consist of 14 letters found in the phrase: (Abgh hajaka wa khaf 'aqimah). / الحروف القمرية 14 حرفاً مجموعة في: (ابغ حجك وخف عقيمه)."
+            },
+            {
+                topic: "Letter Relationships / علاقات الحروف",
+                qEn: "What is the term for two letters that share the same articulation point but differ in attributes?",
+                qAr: "ما المصطلح الذي يطلق على الحرفين اللذين اتفقا مخرجاً واختلفا صفةً؟",
+                options: [
+                    { en: "Mutamathilain (Identical)", ar: "المتماثلان" },
+                    { en: "Mutajanisain (Homogeneous)", ar: "المتجانسان" },
+                    { en: "Mutaqaribain (Close)", ar: "المتقاربان" },
+                    { en: "Mutaba'idain (Distant)", ar: "المتباعدان" }
+                ],
+                correct: 1,
+                explanation: "Mutajanisain refers to letters sharing the same exit point but having different attributes. / المتجانسان هما الحرفان اللذان اتحدا مخرجاً واختلفا صفة."
+            },
+            {
+                topic: "Tafkheem / التفخيم والاستعلاء",
+                qEn: "Which group of letters are permanently emphasized due to the attribute of Al-Istila' (elevation)?",
+                qAr: "أي مجموعة من الحروف مفخمة دائماً بسبب صفة الاستعلاء؟",
+                options: [
+                    { en: "Khass Daght Qaz", ar: "خص ضغط قظ" },
+                    { en: "Qutb Jad", ar: "قطب جد" },
+                    { en: "Yar-maloon", ar: "يرملون" },
+                    { en: "Madd letters", ar: "حروف المد" }
+                ],
+                correct: 0,
+                explanation: "The seven letters of Isti'la' (Khass Daght Qaz) are always heavy. / حروف الاستعلاء السبعة (خص ضغط قظ) مفخمة دائماً في كل أحوالها."
+            },
+            {
+                topic: "Rules of Raa / أحكام الراء",
+                qEn: "If Raa is sakinah preceded by a kasrah, and followed by an elevated letter in the same word (like Firq - فِرْقٍ), what is the rule?",
+                qAr: "إذا كانت الراء ساكنة وقبلها كسر أصلي وبعدها حرف استعلاء غير مكسور في نفس الكلمة مثل (فِرْقٍ)، فما الحكم؟",
+                options: [
+                    { en: "Must be heavy exclusively", ar: "وجوب التفخيم قولاً واحداً" },
+                    { en: "Both options are permissible, with heaviness preferred", ar: "جواز الوجهين (التفخيم والترقيق) والتفخيم أولى" },
+                    { en: "Must be light exclusively", ar: "وجوب الترقيق قولاً واحداً" },
+                    { en: "Dropped entirely", ar: "حذف الراء" }
+                ],
+                correct: 1,
+                explanation: "The word (Firq) permits both options with preference for heaviness. / كلمة (فِرْقٍ) يجوز فيها الوجهان والتفخيم أولى."
+            },
+            {
+                topic: "Extended Madd / المد الفرعي",
+                qEn: "How many vowel counts is (Al-Madd Al-Lazim - Obligatory Prolongation) stretched?",
+                qAr: "كم حركة يُمد (المد اللازم)؟",
+                options: [
+                    { en: "Two counts", ar: "حركتان" },
+                    { en: "Four counts", ar: "أربع حركات" },
+                    { en: "Five counts", ar: "خمس حركات" },
+                    { en: "Six obligatory counts", ar: "ست حركات لزوماً" }
+                ],
+                correct: 3,
+                explanation: "Obligatory Madd is stretched for six counts without dispute. / المد اللازم يمد بمقدار 6 حركات لزوماً بالإجماع."
+            },
+            {
+                topic: "Sun Letters / الحروف الشمسية",
+                qEn: "How many Sun letters (Al-Shamsiyyah) cause the definite article Lam to be merged (Idgham)?",
+                qAr: "كم عدد الحروف الشمسية التي تدغم عندها لام التعريف؟",
+                options: [
+                    { en: "14 letters", ar: "14 حرفاً" },
+                    { en: "10 letters", ar: "10 حروف" },
+                    { en: "28 letters", ar: "28 حرفاً" },
+                    { en: "6 letters", ar: "6 حروف" }
+                ],
+                correct: 0,
+                explanation: "Sun letters consist of 14 letters starting from Ta, Thaa, Dal, etc. / الحروف الشمسية 14 حرفاً وهي الباقية بعد الحروف القمرية."
+            },
+            {
+                topic: "Letter Attributes: Shiddah / صفة الشدة",
+                qEn: "What does the attribute (Ash-Shiddah - Intensity) mean in letter articulation?",
+                qAr: "ما معنى صفة (الشدة) لغةً واصطلاحاً؟",
+                options: [
+                    { en: "Complete stoppage of sound running due to strong reliance on articulation point", ar: "انحباس جريان الصوت عند النطق بالحرف لقوة الاعتماد على المخرج" },
+                    { en: "Flow of breath and sound", ar: "جريان الصوت والنفس" },
+                    { en: "Vibration of the tongue", ar: "اهتزاز اللسان" },
+                    { en: "Soft whispering", ar: "الهمس الخفيف" }
+                ],
+                correct: 0,
+                explanation: "Shiddah means sound is completely locked due to strong pressure. / الشدة هي انحباس جريان الصوت عند النطق بالحرف لقوة الاعتماد على المخرج."
+            },
+            {
+                topic: "Letter Attributes: Istifal / صفة الاستفال",
+                qEn: "What is the opposite attribute of Al-Istila' (Elevation)?",
+                qAr: "ما هي الصفة المضادة لصفة (الاستعلاء)؟",
+                options: [
+                    { en: "Al-Istifal (Lowering / Thinness)", ar: "الاستفال (انخفاض اللسان عن الحنك الأعلى)" },
+                    { en: "Al-Itbaq", ar: "الإطباق" },
+                    { en: "Al-Idhlaq", ar: "الإذلاق" },
+                    { en: "Al-Hams", ar: "الهمس" }
+                ],
+                correct: 0,
+                explanation: "Istifal is the opposite of Istila', lowering the tongue from the upper palate. / الاستفال هو ضد الاستعلاء، ويعني انخفاض اللسان عن الحنك الأعلى."
+            },
+            {
+                topic: "Madd Munfasil / المد المنفصل",
+                qEn: "What is (Al-Madd Al-Munfasil - Separated Prolongation)?",
+                qAr: "ما هو (المد المنفصل)؟",
+                options: [
+                    { en: "When a madd letter is at the end of a word and Hamza is at the start of the next", ar: "أن يكون حرف المد في آخر الكلمة والهمزة في أول الكلمة التي بعدها" },
+                    { en: "When Hamza and madd are in the exact same word", ar: "أن يجتمع حرف المد والهمز في كلمة واحدة" },
+                    { en: "Stretching for 6 counts mandatory", ar: "المد 6 حركات لزوماً" },
+                    { en: "Natural length of one count", ar: "حركة واحدة فقط" }
+                ],
+                correct: 0,
+                explanation: "Munfasil occurs when the lengthening letter and triggering Hamza are in separate words. / المد المنفصل هو أن يكون حرف المد في آخر الكلمة والهمزة في أول الكلمة التالية."
+            },
+            {
+                topic: "Madd Muttasil / المد المتصل",
+                qEn: "What is the ruling and stretch duration for Al-Madd Al-Muttasil (Connected Prolongation) under Hafs?",
+                qAr: "ما هو حكم ومقدار مد (المد المتصل) برواية حفص؟",
+                options: [
+                    { en: "Obligatory (Wajib) stretched 4 or 5 counts", ar: "واجب ويمد بمقدار 4 أو 5 حركات" },
+                    { en: "Permissible shortened to 2 counts", ar: "جائز يقصر لحركتين" },
+                    { en: "Mandatory 6 counts", ar: "لازم 6 حركات" },
+                    { en: "Forbidden", ar: "ممنوع" }
+                ],
+                correct: 0,
+                explanation: "Muttasil is obligatorily prolonged for 4 or 5 vowel counts. / المد المتصل واجب المد بمقدار 4 أو 5 حركات."
+            },
+            {
+                topic: "Madd Arid Lissukoon / المد العارض للسكون",
+                qEn: "What is (Al-Madd Al-Arid Lissukoon - Temporary Sukoon Prolongation)?",
+                qAr: "ما هو (المد العارض للسكون)؟",
+                options: [
+                    { en: "When stopping on a word whose last letter became sakin temporarily due to pause", ar: "أن يوقف على كلمة كان آخرها متحركاً فأصبح ساكناً لأجل الوقف" },
+                    { en: "Mandatory 6 counts like Lazim", ar: "مد لازم ست حركات" },
+                    { en: "Natural 2 counts only", ar: "حركتان فقط وجوباً" },
+                    { en: "Hamza-based madd", ar: "المد بالهمزة" }
+                ],
+                correct: 0,
+                explanation: "Arid Lissukoon occurs when you pause on a word, making a vowelled letter temporarily sakin. / المد العارض للسكون هو أن يوقف على كلمة بعد حرف المد سُكنت لأجل الوقف."
+            },
+            {
+                topic: "Al-Madd Al-Lazim Harfi / المد اللازم الحرفي",
+                qEn: "Where does Al-Madd Al-Lazim Harfi occur in the Holy Quran?",
+                qAr: "أين يقع (المد اللازم الحرفي) في فواتح السور؟",
+                options: [
+                    { en: "In the disjointed opening letters of specific Surahs (like Alif-Lam-Meem)", ar: "في فواتح السور المقطعة التي هجاؤها على ثلاثة أحرف أوسطها مد" },
+                    { en: "In normal body text verses", ar: "في آيات القرآن العادية" },
+                    { en: "At the end of every Juz", ar: "في نهاية كل جزء" },
+                    { en: "Only in Surah Al-Fatihah", ar: "في سورة الفاتحة فقط" }
+                ],
+                correct: 0,
+                explanation: "Harfi Lazim occurs inside the opening letter abbreviations of surahs. / المد اللازم الحرفي يقع في فواتح السور المقطعة."
+            },
+            {
+                topic: "Qalqalah Ranks / مراتب القلقلة",
+                qEn: "Which rank of Qalqalah is considered the strongest (Kubra - Major)?",
+                qAr: "أي مراتب القلقلة تعتبر الأقوى (القلقلة الكبرى)؟",
+                options: [
+                    { en: "When pausing on a Qalqalah letter that is doubled (Mushaddad) at the end of a word (like الحَقّ)", ar: "عند الوقوف على حرف قلقلة مشدد آخر الكلمة (مثل: الحقّ)" },
+                    { en: "When the letter is in the middle of a word", ar: "إذا كان الحرف في وسط الكلمة" },
+                    { en: "When vowelled with Fatha", ar: "إذا كان متحركاً بالفتح" },
+                    { en: "Weakest form", ar: "أضعفها" }
+                ],
+                correct: 0,
+                explanation: "Pausing on a doubled Qalqalah letter creates the major (Kubra) echo. / قلقلة الموقوف عليه المشدد هي أقوى المراتب (الكبرى)."
+            },
+            {
+                topic: "Laam Shamsiyyah Exceptions / استثناءات اللام الشمسية",
+                qEn: "How is the Lam in the word (الله - Allah) pronounced regarding heaviness and lightness?",
+                qAr: "كيف تُعامل لام لفظ الجلالة (الله) تفخيماً وترقيقاً؟",
+                options: [
+                    { en: "Emphasized (Tafkheem) if preceded by Fatha or Dammah, and light (Tarqeeq) if preceded by Kasrah", ar: "تُفخم إذا سبقت بفتح أو ضم، وتُرقق إذا سبقها كسر" },
+                    { en: "Always light", ar: "مرققة دائماً" },
+                    { en: "Always heavy", ar: "مفخمة دائماً" },
+                    { en: "Dropped", ar: "محذوفة" }
+                ],
+                correct: 0,
+                explanation: "The Lam in Allah's name is heavy after Fatha/Dammah and light after Kasrah. / لام لفظ الجلالة تفخم إذا سبقت بفتح أو ضم وتترقق إذا سبقت بكسر."
+            },
+            {
+                topic: "Adab at-Tilawah / آداب التلاوة",
+                qEn: "What is the recommended spiritual etiquette when beginning Quran recitation?",
+                qAr: "ما هو المستحب فعله روحياً عند الشروع في تلاوة القرآن الكريم؟",
+                options: [
+                    { en: "Seeking refuge with Allah from Satan (Isti'adhah) and Basmalah", ar: "الاستعاذة بالله من الشيطان الرجيم والبسملة" },
+                    { en: "Reciting as fast as possible", ar: "الإسراع المطلق" },
+                    { en: "Skipping Isti'adhah", ar: "ترك الاستعاذة" },
+                    { en: "Reading without reflection", ar: "القراءة بلا تدبر" }
+                ],
+                correct: 0,
+                explanation: "Reciting Isti'adhah and Basmalah prepares the heart for divine reflection. / يستحب الاستعاذة والبسملة لتهيئة القلب لتدبر كلام الله."
+            }
+        ],
+        expert: [
+            {
+                topic: "Waqf and Ibtida' / الوقف والابتداء",
+                qEn: "What is the pause (Waqf) that conveys a meaning other than what Allah intended, making it impermissible if done intentionally?",
+                qAr: "ما هو الوقف الذي يفيد معناً غير ما أراده الله سبحانه وتعالى، ويحرم تعمده؟",
+                options: [
+                    { en: "Waqf Kafi (Sufficient)", ar: "الوقف الكافي" },
+                    { en: "Waqf Hasan (Good)", ar: "الوقف الحسن" },
+                    { en: "Waqf Qabih (Ugly/Bad)", ar: "الوقف القبيح" },
+                    { en: "Waqf Tam (Complete)", ar: "الوقف التام" }
+                ],
+                correct: 2,
+                explanation: "Waqf Qabih alters or corrupts the intended meaning of the Qur'anic verse. / الوقف القبيح يغير أو يفسد المعنى المراد من الآية القرآنية."
+            },
+            {
+                topic: "Connected & Disconnected / المقطوع والموصول",
+                qEn: "What is the rule regarding the words (An la - أَنْ لَا) in the verse (أَنْ لَا تَعْبُدُوا إِلَّا اللَّهَ) across the Qur'an?",
+                qAr: "كيف تُكتب كلمة (أَنْ لَا) في قوله تعالى (أَنْ لَا تَعْبُدُوا إِلَّا اللَّهَ) في المصحف؟",
+                options: [
+                    { en: "Written connected (أَلَّا) by consensus", ar: "تُكتب موصولة (أَلَّا) بالاتفاق" },
+                    { en: "Written separated by consensus", ar: "تُكتب مقطوعة بالاتفاق" },
+                    { en: "Disputed among scholars", ar: "مختلف فيها" },
+                    { en: "Modern addition", ar: "إضافة حديثة" }
+                ],
+                correct: 0,
+                explanation: "They are written connected by consensus in these occurrences. / تُكتب موصولة بالاتفاق في هذه المواضع."
+            },
+            {
+                topic: "Pronoun Ha' / هاء الكناية",
+                qEn: "What is the general prerequisite for connecting the pronoun Ha' (Silah Kubra or Sughra)?",
+                qAr: "ما هو الشرط العام لمد صلة هاء الكناية (صلة كبرى أو صغرى)؟",
+                options: [
+                    { en: "It must be between two vowelled (mutaharrik) letters", ar: "أن تقع بين حرفين متحركين" },
+                    { en: "It must be between two sakin letters", ar: "أن تقع بين حرفين ساكنين" },
+                    { en: "It must appear at the start of a verse", ar: "أن تأتي في بداية الآية" },
+                    { en: "It must follow a madd letter", ar: "أن تأتي بعد حرف مد" }
+                ],
+                correct: 0,
+                explanation: "The pronoun Ha' must be positioned between two vowelled letters to receive Silah prolongation. / يُشترط لصلة هاء الكناية أن تقع بين حرفين متحركين."
+            },
+            {
+                topic: "Uthmani Script / الرسم العثماني",
+                qEn: "What is Uthmani Orthography (Ar-Rasm Al-Uthmani)?",
+                qAr: "ما هو المقصود بـ (الرسم العثماني)؟",
+                options: [
+                    { en: "Modern standard spelling", ar: "الإملاء القياسي الحديث" },
+                    { en: "Ancient Kufic script", ar: "الخط الكوفي القديم" },
+                    { en: "The standard script authorized by Uthman ibn Affan for Qur'anic codices", ar: "الخط الذي ارتضاه الصحابة في عهد عثمان بن عفان لكتابة المصاحف" },
+                    { en: "Contemporary Naskh script", ar: "خط النسخ المعاصر" }
+                ],
+                correct: 2,
+                explanation: "Uthmani script is the divinely endorsed historical orthography preserved in Qur'ans. / الرسم العثماني هو علم يُعرف به مخالفات خط المصاحف العثمانية لأصول الرسم القياسي."
+            },
+            {
+                topic: "Hafs Silence (Sakt) / السكت عند حفص",
+                qEn: "How many mandatory Sakt (silent pauses without taking a breath) are narrated under the Shatibiyyah path for Hafs from 'Asim?",
+                qAr: "كم عدد السكتات الواجبة لحفص عن عاصم من طريق الشاطبية؟",
+                options: [
+                    { en: "One Sakt", ar: "سكتة واحدة" },
+                    { en: "Two Sakts", ar: "سكتتان" },
+                    { en: "Four Sakts", ar: "أربع سكتات" },
+                    { en: "Five Sakts", ar: "خمس سكتات" }
+                ],
+                correct: 2,
+                explanation: "The four famous Sakts for Hafs are: ('Iwajaa Qayyima), (Marqadna Hatha), (Man Raqin), and (Bal Ran). / السكتات الأربع الواجبة لحفص هي: (عوجاً قيما)، (مرقدنا هذا)، (من راق)، (بل ران)."
+            },
+            {
+                topic: "Al-Madd Al-Lazim / المد اللازم الكلمي المثقل",
+                qEn: "What is the mandatory duration and rule for Al-Madd Al-Lazim Al-Kalimi Al-Muthaqal (like Dhaal-leen)?",
+                qAr: "ما هو مقدار مد المد اللازم الكلمي المثقل (مثل: الضالِّين)؟",
+                options: [
+                    { en: "Two vowel counts permissible", ar: "حركتان جوازاً" },
+                    { en: "Four vowel counts moderate", ar: "أربع حركات توسطاً" },
+                    { en: "Six mandatory vowel counts", ar: "ست حركات لزوماً" },
+                    { en: "Shortened always", ar: "القصر دائماً" }
+                ],
+                correct: 2,
+                explanation: "Obligatory heavy word-based prolongation is stretched for exactly six counts. / المد اللازم الكلمي المثقل يُمد ست حركات لزوماً."
+            },
+            {
+                topic: "Idgham Mutamathilain / إدغام المتماثلين",
+                qEn: "What is the rule when a sakin Meem meets a vowelled Meem (identical letter merge)?",
+                qAr: "ما هو الحكم إذا التقت ميم ساكنة بميم متحركة؟",
+                options: [
+                    { en: "Izhar Shafawi", ar: "إظهار شفوي" },
+                    { en: "Idgham Mutamathilain Saghir with full Ghunnah", ar: "إدغام متماثلين صغير مع غنة كاملة" },
+                    { en: "Ikhfa' Shafawi", ar: "إخفاء شفوي" },
+                    { en: "Iqlab", ar: "إقلاب" }
+                ],
+                correct: 1,
+                explanation: "When two identical letters meet (first sakin, second vowelled), they undergo Idgham with complete ghunnah. / إذا التقى حرفان متماثلان أولهما ساكن والثاني متحرك وجب الإدغام الصغير."
+            },
+            {
+                topic: "Imalah in Hafs / الإمالة عند حفص",
+                qEn: "What is the only word recited with pure Imalah in the narration of Hafs from 'Asim via Shatibiyyah?",
+                qAr: "ما هي الكلمة الوحيدة التي تُقرأ بالإمالة الكبرى في رواية حفص عن عاصم من طريق الشاطبية؟",
+                options: [
+                    { en: "Majraaha (in Surah Hud)", ar: "كلمة (مَجْرَاهَا) في سورة هود" },
+                    { en: "Ra'ani", ar: "كلمة (رآني)" },
+                    { en: "Ya Waylata", ar: "كلمة (يا ويلتى)" },
+                    { en: "'Asa", ar: "كلمة (عسى)" }
+                ],
+                correct: 0,
+                explanation: "The word Majraaha in Surah Hud is the single word featuring mandatory Imalah in Hafs. / كلمة (مَجْرَاهَا) في سورة هود هي الكلمة الوحيدة الممالة لحفص."
+            },
+            {
+                topic: "Muqatta'at Letters / الحروف المقطعة",
+                qEn: "How long are three-letter disjointed letters whose middle letter is a madd letter (like Alif-Lam-Meem) stretched?",
+                qAr: "كم حركة تُمد الحروف المقطعة المكونة من ثلاثة أحرف أوسطها حرف مد (مثل: لام وميم في الم)؟",
+                options: [
+                    { en: "Two short counts", ar: "حركتان" },
+                    { en: "Four counts only", ar: "أربع حركات فقط" },
+                    { en: "Six mandatory counts (Madd Lazim Harfi)", ar: "ست حركات لزوماً (مد لازم حرفي)" },
+                    { en: "Dropped entirely", ar: "تُحذف تماماً" }
+                ],
+                correct: 2,
+                explanation: "Three-letter opening abbreviations with a central lengthening letter are stretched for six counts. / ما كان هجاؤه على ثلاثة أحرف أوسطها حرف مد يُمد ست حركات لزوماً."
+            },
+            {
+                topic: "Ranks of Ghunnah / مراتب الغنة",
+                qEn: "What is considered the highest rank and duration of nasal sound (Ghunnah)?",
+                qAr: "ما هي أعلى مراتب الغنة وأكملها؟",
+                options: [
+                    { en: "The doubled (Mushaddad) Noon and Meem", ar: "النون والميم المشددتان والمدغمتان إدغاماً كاملاً" },
+                    { en: "Hidden (Ikhfa') Noon", ar: "المخفى" },
+                    { en: "Clear (Izhar) Noon", ar: "المظهر" },
+                    { en: "Vowelled letters", ar: "المتحرك" }
+                ],
+                correct: 0,
+                explanation: "Doubled Noon and Meem carry the strongest and longest absolute duration of Ghunnah. / أكمل مراتب الغنة تكون في المشدد والمدغم إدغاماً كاملاً بغنة."
+            },
+            {
+                topic: "Waqf Lazim / الوقف اللازم",
+                qEn: "What is Waqf Lazim (Mandatory Pause) in Quranic recitation?",
+                qAr: "ما هو (الوقف اللازم) في المصحف الشريف؟",
+                options: [
+                    { en: "A pause that must be observed because stopping clarifies the meaning and continuing distorts it", ar: "الوقف الذي يجب الوقف عنده لأن الوصل يغير المعنى المراد" },
+                    { en: "A pause that is forbidden", ar: "وقف محرم تعمده" },
+                    { en: "A pause where breathing is optional", ar: "وقف جائز" },
+                    { en: "Stopping at the end of every Juz", ar: "الوقف في آخر الجزء" }
+                ],
+                correct: 0,
+                explanation: "Waqf Lazim is mandatory (marked with symbol م) to prevent altering the sacred meaning. / الوقف اللازم (ويرمز له بحرف م) يجب الوقف عنده لئلا يتغير المعنى."
+            },
+            {
+                topic: "Waqf Mamnu' / الوقف الممنوع",
+                qEn: "What does the symbol (لا) above a verse combination signify regarding pausing?",
+                qAr: "ما دلالة رمز الوقف الممنوع أو لا اللازمة (لا) فوق الكلمات القرآنية؟",
+                options: [
+                    { en: "Do not pause here because it breaks connected grammatical ties", ar: "لا يجوز الوقف عندها لتعلقها بما بعدها لفظاً ومعنى" },
+                    { en: "Mandatory stop", ar: "يجب الوقف عندها وجوباً" },
+                    { en: "Pause for 5 seconds", ar: "التوقف لمدة خمس ثوانٍ" },
+                    { en: "Start a new surah", ar: "البدء بسورة جديدة" }
+                ],
+                correct: 0,
+                explanation: "The symbol (لا) indicates stopping is prohibited due to strong syntactic linkage. / رمز (لا) يدل على عدم جواز الوقف لتعلق المعنى بما بعده."
+            },
+            {
+                topic: "Sakt in other Riwayat / سكت حمزة وخلف",
+                qEn: "Besides Hafs, which other major reciter is famous for frequent Sakt (silent pauses) on vowelled letters before Hamza?",
+                qAr: "من هو القارئ الآخر المشهور بكثرة السكت على الحرف المتحرك قبل الهمز سوى حفص؟",
+                options: [
+                    { en: "Hamza Al-Zaiyat and Khalaf", ar: "الإمام حمزة وخلف العاشر" },
+                    { en: "Nafi' Al-Madani", ar: "الإمام نافع المدني" },
+                    { en: "Ibn Kathir", ar: "الإمام ابن كثير" },
+                    { en: "Abu Amr", ar: "الإمام أبو عمرو" }
+                ],
+                correct: 0,
+                explanation: "Hamza and Khalaf are famous for extensive Sakt rules in their transmission. / الإمام حمزة وخلف العاشر يرويان السكت على الموصول والمنفصل."
+            },
+            {
+                topic: "Ikhtilas / الاختلاس والروم",
+                qEn: "What is (Al-Ikhtilas - Snatching the vowel)?",
+                qAr: "ما هو (الاختلاس) في أداء الحركات؟",
+                options: [
+                    { en: "Pronouncing a vowel quickly at two-thirds of its duration while keeping its sound trace", ar: "الإتيان بالحركة كاملة بثلثي صوتها وسرعة النطق بها" },
+                    { en: "Deleting the vowel entirely", ar: "حذف الحركة تماماً" },
+                    { en: "Prolonging a vowel for 6 counts", ar: "مد الحركة 6 حركات" },
+                    { en: "Raising voice level", ar: "رفع الصوت" }
+                ],
+                correct: 0,
+                explanation: "Ikhtilas is the swift articulation of a vowel sound while retaining a fraction of its duration. / الاختلاس هو النطق بالحركة بصوت خفي بحيث يذهب ثلثها ويبقى ثلثاها."
+            },
+            {
+                topic: "Ishmam / الإشمام",
+                qEn: "What is (Al-Ishmam) in Tajweed and Quranic orthography?",
+                qAr: "ما هو (الإشمام) في أداء الحروف؟",
+                options: [
+                    { en: "Puckering the lips immediately after pronouncing a sakin letter to indicate a Dammah without sound", ar: "ضم الشفتين بعيد الإسكان بلا صوت إشارة إلى الضمة" },
+                    { en: "Smell of musk during recitation", ar: "رائحة طيبة أثناء القراءة" },
+                    { en: "Breathing deeply", ar: "أخذ نفس عميق" },
+                    { en: "Whispering", ar: "الهمس الخافت" }
+                ],
+                correct: 0,
+                explanation: "Ishmam is a visual lip gesture indicating a dammah without producing vocal sound. / الإشمام هو ضم الشفتين بعيد إسكان الحرف بلا صوت إشارة إلى الضمة."
+            },
+            {
+                topic: "Roum / الروم",
+                qEn: "What is (Al-Roum) when stopping on a word ending with Kasrah or Dammah?",
+                qAr: "ما هو (الروم) عند الوقف على أواخر الكلمات؟",
+                options: [
+                    { en: "Bringing a weak, hidden sound of the vowel so only a close listener hears it", ar: "الإتيان ببعض الحركة (الكسرة أو الضمة) بصوت خفي يسمعه القريب" },
+                    { en: "Running fast", ar: "الجري السريع" },
+                    { en: "Stopping with full voice", ar: "الوقف بصوت عالٍ" },
+                    { en: "Total silence", ar: "السكون المحض" }
+                ],
+                correct: 0,
+                explanation: "Roum articulates a fraction of the vowel sound during a pause. / الروم هو النطق ببعض الحركة بصوت خفي."
+            },
+            {
+                topic: "Tafkheem of Laam / تفخيم لام لفظ الجلالة",
+                qEn: "When does the Lam in the word Allah take Tafkheem (heavy sound)?",
+                qAr: "متى تفخم لام لفظ الجلالة (الله) تفخيماً قطعياً؟",
+                options: [
+                    { en: "When preceded by Fatha or Dammah", ar: "إذا سبقت بفتح أو ضم" },
+                    { en: "When preceded by Kasrah", ar: "إذا سبقت بكسر" },
+                    { en: "When preceded by Sukoon", ar: "إذا سبقت بسكون" },
+                    { en: "Never", ar: "أبداً" }
+                ],
+                correct: 0,
+                explanation: "Lam of Allah is heavy when preceded by Fatha or Dammah. / تفخم لام لفظ الجلالة إذا كان ما قبلها مفتوحاً أو مضموماً."
+            },
+            {
+                topic: "Madd Farq / مد الفرق",
+                qEn: "What is (Al-Madd Al-Farq - Differentiating Prolongation)?",
+                qAr: "ما هو (مد الفرق) ولماذا سمي بذلك؟",
+                options: [
+                    { en: "A 6-count elongation used to distinguish between an interrogative Hamza and a definite article Hamza", ar: "مد لازم كلمي مخفف بمقدار 6 حركات للفرق بين همزة الاستفهام وهمزة الوصل" },
+                    { en: "Differentiating teams in a game", ar: "للفرق بين الفريقين" },
+                    { en: "Separating two surahs", ar: "الفصل بين السورتين" },
+                    { en: "A natural madd", ar: "مد طبيعي" }
+                ],
+                correct: 0,
+                explanation: "Madd Farq distinguishes questions like (آلله أذن لكم) from statements. / مد الفرق هو مد ست حركات للتمييز بين همزة الاستفهام وهمزة الوصل."
+            },
+            {
+                topic: "Madd Lazim Harfi Mukhaffaf / المد اللازم الحرفي المخفف",
+                qEn: "What is the stretch duration of (Al-Madd Al-Lazim Harfi Mukhaffaf) like the letter (السين) in (طس)?",
+                qAr: "ما مقدار مد (المد اللازم الحرفي المخفف) مثل حرف السين في (طس)؟",
+                options: [
+                    { en: "Six vowel counts mandatory", ar: "ست حركات لزوماً" },
+                    { en: "Two counts", ar: "حركتان" },
+                    { en: "Four counts", ar: "أربع حركات" },
+                    { en: "No prolongation", ar: "بلا مد" }
+                ],
+                correct: 0,
+                explanation: "Like all obligatory letter-based madds, it is stretched for six counts. / يمد ست حركات لزوماً كباقي المدود اللازمة الحرفية."
+            },
+            {
+                topic: "Tabaqat al-Qurra / طبقات القراء",
+                qEn: "Who are the seven canonical Imams of Quranic Qira'at (Recitations)?",
+                qAr: "من هم الأئمة السبعة أصحاب القراءات المتواترة المشهورة؟",
+                options: [
+                    { en: "Nafi', Ibn Kathir, Abu Amr, Ibn Amir, Asim, Hamza, Al-Kisa'i", ar: "نافع، ابن كثير، أبو عمرو، ابن عامر، عاصم، حمزة، الكسائي" },
+                    { en: "Abu Bakr and Umar", ar: "أبو بكر وعمر" },
+                    { en: "Al-Bukhari and Muslim", ar: "البخاري ومسلم" },
+                    { en: "Imam Shafi'i and Malik", ar: "الشافعي ومالك" }
+                ],
+                correct: 0,
+                explanation: "The seven canonical reciters form the basis of the Shatibiyyah text. / الأئمة السبعة هم نافع وابن كثير وأبو عمرو وابن عامر وعاصم وحمزة والكسائي."
+            }
+        ]
+    };
+
+    // Topic Management Helpers
+    function getAllCombinedQuestionsForLevel(level) {
+        var baseList = dualLanguagePaths[level] || [];
+        var customList = JSON.parse(localStorage.getItem("tajweed_duallang_" + level) || "[]");
+        return baseList.concat(customList);
+    }
+
+    function getUniqueTopicsWithCounts(level) {
+        var allQ = getAllCombinedQuestionsForLevel(level);
+        var map = {};
+        var ordered = [];
+        for (var i = 0; i < allQ.length; i++) {
+            var t = allQ[i].topic;
+            if (!map[t]) {
+                map[t] = 1;
+                ordered.push(t);
+            } else {
+                map[t]++;
+            }
+        }
+        return ordered.map(function(t) { return { topic: t, count: map[t] }; });
+    }
+
+    function getEnabledTopicsForLevel(level) {
+        var allTopics = getUniqueTopicsWithCounts(level).map(function(item) { return item.topic; });
+        var rawSaved = localStorage.getItem("tajweed_enabled_topics_" + level);
+        if (!rawSaved) return allTopics;
+        try {
+            var parsed = JSON.parse(rawSaved);
+            if (!Array.isArray(parsed)) return allTopics;
+            var valid = parsed.filter(function(t) { return allTopics.indexOf(t) !== -1; });
+            return valid.length > 0 ? valid : allTopics;
+        } catch (e) {
+            return allTopics;
+        }
+    }
+
+    function saveEnabledTopicsForLevel(level, topicArray) {
+        localStorage.setItem("tajweed_enabled_topics_" + level, JSON.stringify(topicArray));
+        updateLevelMenuBadges();
+    }
+
+    function updateLevelMenuBadges() {
+        var levels = ["easy", "advanced", "expert"];
+        for (var i = 0; i < levels.length; i++) {
+            var lvl = levels[i];
+            var badgeEl = document.getElementById("badge-topics-" + lvl);
+            if (!badgeEl) continue;
+            var allTopics = getUniqueTopicsWithCounts(lvl);
+            var enabled = getEnabledTopicsForLevel(lvl);
+            var allQ = getAllCombinedQuestionsForLevel(lvl);
+            var activeQCount = allQ.filter(function(q) { return enabled.indexOf(q.topic) !== -1; }).length;
+            badgeEl.textContent = "📌 " + enabled.length + " of " + allTopics.length + " topics active (" + activeQCount + " questions)";
+        }
+    }
+
+    function renderTopicSelectorForLevel() {
+        var level = document.getElementById("topic-filter-track").value;
+        var container = document.getElementById("topic-selector-container");
+        var summaryEl = document.getElementById("topic-selection-summary");
+        var topicsWithCounts = getUniqueTopicsWithCounts(level);
+        var enabledTopics = getEnabledTopicsForLevel(level);
+
+        container.innerHTML = "";
+        var activeQuestionsTotal = 0;
+
+        for (var i = 0; i < topicsWithCounts.length; i++) {
+            var item = topicsWithCounts[i];
+            var isChecked = enabledTopics.indexOf(item.topic) !== -1;
+            if (isChecked) activeQuestionsTotal += item.count;
+
+            var label = document.createElement("label");
+            label.className = "topic-check-item";
+
+            var cb = document.createElement("input");
+            cb.type = "checkbox";
+            cb.checked = isChecked;
+            cb.setAttribute("data-topic-name", item.topic);
+            cb.addEventListener("change", function() {
+                var checkboxes = container.querySelectorAll("input[type='checkbox']");
+                var selected = [];
+                for (var k = 0; k < checkboxes.length; k++) {
+                    if (checkboxes[k].checked) selected.push(checkboxes[k].getAttribute("data-topic-name"));
+                }
+                if (selected.length === 0) {
+                    this.checked = true;
+                    alert("At least 1 topic must remain active for this level!");
+                    return;
+                }
+                saveEnabledTopicsForLevel(level, selected);
+                renderTopicSelectorForLevel();
+            });
+
+            var textSpan = document.createElement("span");
+            textSpan.textContent = item.topic;
+
+            var countSpan = document.createElement("span");
+            countSpan.className = "topic-count-pill";
+            countSpan.textContent = item.count + " Q";
+
+            label.appendChild(cb);
+            label.appendChild(textSpan);
+            label.appendChild(countSpan);
+            container.appendChild(label);
+        }
+
+        summaryEl.textContent = "Active: " + enabledTopics.length + " / " + topicsWithCounts.length + " topics (" + activeQuestionsTotal + " questions available in pool)";
+    }
+
+    document.getElementById("topic-filter-track").addEventListener("change", renderTopicSelectorForLevel);
+
+    // =========================================================================
+    // GAME & FIREBASE LIVE ROOM STATE
+    // =========================================================================
+    var selectedPlayMode = "local"; // "local" or "live"
+    var liveRoomCode = null;
+    var liveRoomRef = null;
+    var liveRoundResolved = false;
+    var autoAdvanceTimeout = null;
+
+    // Player Client State
+    var playerRoomCode = null;
+    var playerTeamNumber = 1;
+    var playerRoomRef = null;
+    var playerCurrentQIndex = -1;
+    var playerHasAnsweredCurrent = false;
+    var playerTimerInterval = null;
+    var playerLatestQuestion = null;
+
+    var currentPathName = 'easy';
+    var activePath = [];
+    var currentQuestion = 0;
+    var score1 = 0;
+    var score2 = 0;
+    var streak1 = 0;
+    var streak2 = 0;
+    var maxStreak1 = 0;
+    var maxStreak2 = 0;
+    var team1Name = "Team Al-Noor";
+    var team2Name = "Team Al-Huda";
+    var activeTeam = 1; 
+    var isTransferPhase = false;
+    var timeLimit = 20;
+    var timeLeft = 20;
+    var timerInterval = null;
+    var matchHistory = [];
+    var lifelines = {
+        1: { fiftyFifty: true, extraTime: true },
+        2: { fiftyFifty: true, extraTime: true }
+    };
+
+    // Load saved settings into Admin inputs
+    if(localStorage.getItem("tajweed_easy_time")) document.getElementById("set-easy-time").value = localStorage.getItem("tajweed_easy_time");
+    if(localStorage.getItem("tajweed_adv_time")) document.getElementById("set-adv-time").value = localStorage.getItem("tajweed_adv_time");
+    if(localStorage.getItem("tajweed_exp_time")) document.getElementById("set-exp-time").value = localStorage.getItem("tajweed_exp_time");
+    if(localStorage.getItem("tajweed_q_count")) document.getElementById("set-q-count").value = localStorage.getItem("tajweed_q_count");
+    document.getElementById("set-admin-pass").value = adminPassword;
+
+    function updateMenuSubtitle() {
+        var count = parseInt(localStorage.getItem("tajweed_q_count") || "10", 10);
+        document.getElementById("menu-subtitle").textContent = "Expanded question pools with up to " + count + " randomized questions, Zoom Breakout Room sync, speed bonuses & interactive Arabic audio.";
+        updateLevelMenuBadges();
+    }
+    updateMenuSubtitle();
+
+    // =========================================================================
+    // FIREBASE HOST & PLAYER FUNCTIONS
+    // =========================================================================
+    function cleanupFirebaseListeners() {
+        if (liveRoomRef) {
+            liveRoomRef.off();
+            liveRoomRef = null;
+        }
+        if (playerRoomRef) {
+            playerRoomRef.off();
+            playerRoomRef = null;
+        }
+        clearTimeout(autoAdvanceTimeout);
+        clearInterval(playerTimerInterval);
+    }
+
+    function buildQuestionPool() {
+        var combinedList = getAllCombinedQuestionsForLevel(currentPathName);
+        var enabledTopics = getEnabledTopicsForLevel(currentPathName);
+
+        var filteredList = combinedList.filter(function(q) {
+            return enabledTopics.indexOf(q.topic) !== -1;
+        });
+        if (filteredList.length === 0) filteredList = combinedList;
+
+        var targetCount = parseInt(localStorage.getItem("tajweed_q_count") || "10", 10);
+        if (targetCount > filteredList.length) targetCount = filteredList.length;
+
+        shuffleArray(filteredList);
+        var selectedPool = filteredList.slice(0, targetCount);
+
+        activePath = selectedPool.map(function(q) {
+            var clonedOptions = q.options.map(function(opt, idx) {
+                return { opt: opt, isCorrect: idx === q.correct };
+            });
+            shuffleArray(clonedOptions);
+            
+            var newCorrectIndex = clonedOptions.findIndex(function(item) { return item.isCorrect; });
+            return {
+                topic: q.topic,
+                qEn: q.qEn,
+                qAr: q.qAr,
+                options: clonedOptions.map(function(item) { return item.opt; }),
+                correct: newCorrectIndex,
+                explanation: q.explanation
+            };
+        });
+
+        if (currentPathName === 'easy') timeLimit = parseInt(localStorage.getItem("tajweed_easy_time") || "20", 10);
+        else if (currentPathName === 'advanced') timeLimit = parseInt(localStorage.getItem("tajweed_adv_time") || "30", 10);
+        else timeLimit = parseInt(localStorage.getItem("tajweed_exp_time") || "40", 10);
+    }
+
+    function hostCreateLiveLobby() {
+        if (!isFirebaseReady || !firebaseDb) {
+            alert("Firebase is not configured yet! Click 'Admin ⚙️' at the top right and paste your Firebase Config JSON first.");
+            return;
+        }
+        cleanupFirebaseListeners();
+        buildQuestionPool();
+
+        liveRoomCode = Math.floor(1000 + Math.random() * 9000).toString();
+        liveRoomRef = firebaseDb.ref("rooms/" + liveRoomCode);
+
+        document.getElementById("lobby-room-code").textContent = liveRoomCode;
+        document.getElementById("lobby-t1-name").textContent = team1Name;
+        document.getElementById("lobby-t2-name").textContent = team2Name;
+        document.getElementById("lobby-t1-card").classList.remove("connected");
+        document.getElementById("lobby-t2-card").classList.remove("connected");
+        document.getElementById("lobby-t1-status").textContent = "⏳ Waiting for Captain to join...";
+        document.getElementById("lobby-t2-status").textContent = "⏳ Waiting for Captain to join...";
+
+        liveRoomRef.set({
+            status: "lobby",
+            team1Name: team1Name,
+            team2Name: team2Name,
+            score1: 0,
+            score2: 0,
+            streak1: 0,
+            streak2: 0,
+            totalQuestions: activePath.length,
+            timeLimit: timeLimit,
+            players: { team1: false, team2: false },
+            answers: { team1: null, team2: null },
+            createdAt: firebase.database.ServerValue.TIMESTAMP
+        });
+
+        if (firebaseAnalytics) {
+            try { firebaseAnalytics.logEvent("create_live_room", { level: currentPathName }); } catch (e) {}
+        }
+
+        // Listen for Captains joining in Lobby
+        liveRoomRef.child("players").on("value", function(snap) {
+            var p = snap.val() || {};
+            if (p.team1) {
+                document.getElementById("lobby-t1-card").classList.add("connected");
+                document.getElementById("lobby-t1-status").textContent = "✅ Team 1 Captain Connected!";
+            }
+            if (p.team2) {
+                document.getElementById("lobby-t2-card").classList.add("connected");
+                document.getElementById("lobby-t2-status").textContent = "✅ Team 2 Captain Connected!";
+            }
+        });
+
+        document.getElementById("setup-container").style.display = "none";
+        document.getElementById("lobby-container").style.display = "block";
+    }
+
+    function hostStartLiveMatchFromLobby() {
+        currentQuestion = 0; score1 = 0; score2 = 0; streak1 = 0; streak2 = 0; maxStreak1 = 0; maxStreak2 = 0;
+        matchHistory = [];
+
+        document.getElementById("lobby-container").style.display = "none";
+        document.getElementById("quiz-container").style.display = "block";
+        document.getElementById("live-stats").style.display = "flex";
+        document.getElementById("lifeline-bar").style.display = "none";
+        document.getElementById("timer-bar-container").style.display = "block";
+
+        var roomPill = document.getElementById("host-room-pill");
+        roomPill.style.display = "inline-block";
+        roomPill.textContent = "Room: " + liveRoomCode;
+
+        // Listen for incoming answers from both Captains
+        liveRoomRef.child("answers").on("value", function(snap) {
+            if (liveRoundResolved) return;
+            var ans = snap.val() || {};
+            var t1Badge = document.getElementById("t1-live-status");
+            var t2Badge = document.getElementById("t2-live-status");
+
+            if (ans.team1) {
+                t1Badge.className = "locked-in-badge";
+                t1Badge.textContent = "🔒 Locked";
+            } else {
+                t1Badge.className = "waiting-badge";
+                t1Badge.textContent = "⏳ Thinking";
+            }
+
+            if (ans.team2) {
+                t2Badge.className = "locked-in-badge";
+                t2Badge.textContent = "🔒 Locked";
+            } else {
+                t2Badge.className = "waiting-badge";
+                t2Badge.textContent = "⏳ Thinking";
+            }
+
+            // Both teams locked in -> grade immediately!
+            if (ans.team1 && ans.team2) {
+                evaluateLiveSimultaneousRound(ans.team1, ans.team2);
+            }
+        });
+
+        loadQuestion();
+    }
+
+    function hostPushLiveQuestion(qData) {
+        if (!liveRoomRef) return;
+        liveRoundResolved = false;
+        clearTimeout(autoAdvanceTimeout);
+
+        var isFinal = (currentQuestion === activePath.length - 1);
+        liveRoomRef.update({
+            status: "question",
+            qIndex: currentQuestion,
+            totalQuestions: activePath.length,
+            isFinal: isFinal,
+            timeLimit: timeLimit,
+            questionStartedAt: firebase.database.ServerValue.TIMESTAMP,
+            currentQuestion: {
+                topic: qData.topic,
+                qEn: qData.qEn,
+                qAr: qData.qAr,
+                options: qData.options
+            },
+            answers: { team1: null, team2: null },
+            roundResult: null
+        });
+    }
+
+    function evaluateLiveSimultaneousRound(ans1, ans2) {
+        if (liveRoundResolved) return;
+        liveRoundResolved = true;
+        clearInterval(timerInterval);
+
+        var qData = activePath[currentQuestion];
+        var buttons = document.querySelectorAll(".opt-btn");
+        var isFinal = (currentQuestion === activePath.length - 1);
+
+        var t1Correct = ans1 && ans1.choice === qData.correct;
+        var t2Correct = ans2 && ans2.choice === qData.correct;
+
+        var t1Faster = false;
+        var t2Faster = false;
+        if (t1Correct && t2Correct) {
+            if (ans1.timestamp <= ans2.timestamp) t1Faster = true;
+            else t2Faster = true;
+        } else if (t1Correct) {
+            t1Faster = true;
+        } else if (t2Correct) {
+            t2Faster = true;
+        }
+
+        var pts1 = 0;
+        var pts2 = 0;
+
+        if (t1Correct) {
+            streak1++;
+            if (streak1 > maxStreak1) maxStreak1 = streak1;
+            pts1 = 1 + (t1Faster ? 1 : 0) + (streak1 >= 3 ? 1 : 0);
+            if (isFinal) pts1 *= 2;
+            score1 += pts1;
+            syncScoreToSheet(team1Name, score1);
+        } else {
+            streak1 = 0;
+        }
+
+        if (t2Correct) {
+            streak2++;
+            if (streak2 > maxStreak2) maxStreak2 = streak2;
+            pts2 = 1 + (t2Faster ? 1 : 0) + (streak2 >= 3 ? 1 : 0);
+            if (isFinal) pts2 *= 2;
+            score2 += pts2;
+            syncScoreToSheet(team2Name, score2);
+        } else {
+            streak2 = 0;
+        }
+
+        if (t1Correct || t2Correct) playSound('correct');
+        else playSound('wrong');
+
+        highlightCorrectAnswer(qData, buttons);
+        attachTeamPickBadges(buttons, ans1 ? ans1.choice : null, ans2 ? ans2.choice : null);
+
+        var summaryHeader = "";
+        if (t1Correct && t2Correct) {
+            var fastName = t1Faster ? team1Name : team2Name;
+            summaryHeader = "🎉 Both Teams Correct! ⚡ " + fastName + " locked in faster! (" + team1Name + " +" + pts1 + ", " + team2Name + " +" + pts2 + ")";
+        } else if (t1Correct) {
+            summaryHeader = "✅ " + team1Name + " Correct (+" + pts1 + " pts)! ❌ " + team2Name + " missed.";
+        } else if (t2Correct) {
+            summaryHeader = "✅ " + team2Name + " Correct (+" + pts2 + " pts)! ❌ " + team1Name + " missed.";
+        } else {
+            summaryHeader = "❌ Neither team answered correctly.";
+        }
+
+        recordMatchQuestion(qData, (t1Correct || t2Correct), team1Name + ": +" + pts1 + " | " + team2Name + ": +" + pts2);
+        setFeedbackMessage(document.getElementById("feedback"), (t1Correct || t2Correct), summaryHeader, null, qData.explanation);
+        updateScoresUI();
+
+        if (liveRoomRef) {
+            liveRoomRef.update({
+                status: "reveal",
+                score1: score1,
+                score2: score2,
+                streak1: streak1,
+                streak2: streak2,
+                roundResult: {
+                    correctIndex: qData.correct,
+                    t1Choice: ans1 ? ans1.choice : -1,
+                    t2Choice: ans2 ? ans2.choice : -1,
+                    pts1: pts1,
+                    pts2: pts2,
+                    summaryHeader: summaryHeader,
+                    explanation: qData.explanation
+                }
+            });
+        }
+
+        showNextButton();
+
+        if (document.getElementById("chk-auto-advance").checked) {
+            var nextBtn = document.getElementById("next-btn");
+            var autoSec = 5;
+            nextBtn.textContent = "Next in " + autoSec + "s... (or Click Now) →";
+            autoAdvanceTimeout = setInterval(function() {
+                autoSec--;
+                if (autoSec > 0) {
+                    nextBtn.textContent = "Next in " + autoSec + "s... (or Click Now) →";
+                } else {
+                    clearInterval(autoAdvanceTimeout);
+                    nextQuestion();
+                }
+            }, 1000);
+        }
+    }
+
+    function attachTeamPickBadges(buttons, t1Choice, t2Choice) {
+        for (var i = 0; i < buttons.length; i++) {
+            var badgesDiv = document.createElement("div");
+            badgesDiv.className = "team-pick-badges";
+            var hasBadge = false;
+            if (t1Choice === i) {
+                var p1 = document.createElement("span");
+                p1.className = "pick-pill-t1";
+                p1.textContent = "👤 " + team1Name;
+                badgesDiv.appendChild(p1);
+                hasBadge = true;
+            }
+            if (t2Choice === i) {
+                var p2 = document.createElement("span");
+                p2.className = "pick-pill-t2";
+                p2.textContent = "👤 " + team2Name;
+                badgesDiv.appendChild(p2);
+                hasBadge = true;
+            }
+            if (hasBadge) buttons[i].appendChild(badgesDiv);
+        }
+    }
+
+    // =========================================================================
+    // PLAYER CLIENT VIEW (FOR ZOOM BREAKOUT ROOMS / PHONES)
+    // =========================================================================
+    function openPlayerJoinView(prefillRoom, prefillTeam) {
+        clearInterval(timerInterval);
+        cleanupFirebaseListeners();
+        document.getElementById("admin-panel").style.display = "none";
+        document.getElementById("game-view-container").style.display = "block";
+        document.getElementById("menu-container").style.display = "none";
+        document.getElementById("setup-container").style.display = "none";
+        document.getElementById("lobby-container").style.display = "none";
+        document.getElementById("quiz-container").style.display = "none";
+        document.getElementById("summary-container").style.display = "none";
+        document.getElementById("live-stats").style.display = "none";
+        document.getElementById("lifeline-bar").style.display = "none";
+        document.getElementById("timer-bar-container").style.display = "none";
+        document.getElementById("player-game-container").style.display = "none";
+        document.getElementById("player-join-container").style.display = "block";
+
+        if (prefillRoom) document.getElementById("join-room-code-input").value = prefillRoom;
+        if (prefillTeam) document.getElementById("join-team-select").value = prefillTeam;
+    }
+
+    function connectPlayerToRoom() {
+        if (!isFirebaseReady || !firebaseDb) {
+            alert("Firebase is not configured on this link yet. Please ask your teacher to configure Firebase in Admin ⚙️ first.");
+            return;
+        }
+        var code = document.getElementById("join-room-code-input").value.trim();
+        var teamNum = parseInt(document.getElementById("join-team-select").value, 10);
+        if (code.length !== 4) {
+            alert("Please enter the 4-digit Room Code! / أدخل رمز الغرفة المكون من 4 أرقام");
+            return;
+        }
+
+        cleanupFirebaseListeners();
+        playerRoomCode = code;
+        playerTeamNumber = teamNum;
+        playerCurrentQIndex = -1;
+        playerRoomRef = firebaseDb.ref("rooms/" + code);
+
+        playerRoomRef.once("value", function(snap) {
+            if (!snap.exists()) {
+                alert("Room " + code + " not found! Check the code with your teacher.");
+                return;
+            }
+            playerRoomRef.child("players/team" + teamNum).set(true);
+
+            document.getElementById("player-join-container").style.display = "none";
+            document.getElementById("player-game-container").style.display = "block";
+
+            playerRoomRef.on("value", function(roomSnap) {
+                var room = roomSnap.val();
+                if (!room) return;
+                renderPlayerRoomState(room);
+            });
+        });
+    }
+
+    function renderPlayerRoomState(room) {
+        var myTeamName = (playerTeamNumber === 1) ? (room.team1Name || "Team 1") : (room.team2Name || "Team 2");
+        var banner = document.getElementById("player-header-banner");
+        banner.style.background = (playerTeamNumber === 1) ? "#e0f2fe" : "#fce7f3";
+        banner.style.color = (playerTeamNumber === 1) ? "#0369a1" : "#be185d";
+
+        document.getElementById("player-team-badge").textContent = "Room " + playerRoomCode + " • " + myTeamName;
+        document.getElementById("player-score-badge").textContent = (room.team1Name || "T1") + ": " + (room.score1 || 0) + " | " + (room.team2Name || "T2") + ": " + (room.score2 || 0);
+
+        var waitBox = document.getElementById("player-waiting-box");
+        var qArea = document.getElementById("player-question-area");
+
+        if (room.status === "lobby") {
+            clearInterval(playerTimerInterval);
+            waitBox.style.display = "block";
+            qArea.style.display = "none";
+            document.getElementById("player-waiting-msg").innerHTML = "Connected as <strong>" + myTeamName + "</strong>!<br>Waiting for teacher to launch the match...<br><em>Tip: Share this screen in your Zoom Breakout Room so teammates can read together!</em>";
+        } else if (room.status === "question" && room.currentQuestion) {
+            waitBox.style.display = "none";
+            qArea.style.display = "block";
+            playerLatestQuestion = room.currentQuestion;
+
+            var myExistingAnswer = room.answers && room.answers["team" + playerTeamNumber];
+            playerHasAnsweredCurrent = Boolean(myExistingAnswer);
+
+            if (playerCurrentQIndex !== room.qIndex) {
+                playerCurrentQIndex = room.qIndex;
+                document.getElementById("player-topic").textContent = room.currentQuestion.topic;
+                document.getElementById("player-double-badge").style.display = room.isFinal ? "inline-block" : "none";
+                document.getElementById("player-q-en").textContent = (room.qIndex + 1) + ". " + room.currentQuestion.qEn;
+                document.getElementById("player-q-ar").textContent = room.currentQuestion.qAr;
+                document.getElementById("player-progress").textContent = "Question " + (room.qIndex + 1) + " of " + room.totalQuestions;
+                document.getElementById("player-feedback").style.display = "none";
+
+                startPlayerSyncedTimer(room.timeLimit || 20, room.questionStartedAt);
+            }
+
+            var optContainer = document.getElementById("player-options");
+            optContainer.innerHTML = "";
+            for (var i = 0; i < room.currentQuestion.options.length; i++) {
+                var opt = room.currentQuestion.options[i];
+                var rowDiv = document.createElement("div");
+                rowDiv.className = "opt-row";
+
+                var btn = document.createElement("button");
+                btn.type = "button";
+                btn.className = "opt-btn";
+                btn.setAttribute("data-action", "player-submit-answer");
+                btn.setAttribute("data-index", i);
+                btn.disabled = playerHasAnsweredCurrent;
+
+                if (playerHasAnsweredCurrent && myExistingAnswer.choice === i) {
+                    btn.style.background = "#dbeafe";
+                    btn.style.borderColor = "#2563eb";
+                    btn.style.fontWeight = "bold";
+                }
+
+                var spanEn = document.createElement("span");
+                spanEn.className = "opt-en";
+                spanEn.textContent = opt.en + (playerHasAnsweredCurrent && myExistingAnswer.choice === i ? "  🔒 (Locked In)" : "");
+
+                var spanAr = document.createElement("span");
+                spanAr.className = "opt-ar";
+                spanAr.setAttribute("dir", "rtl");
+                spanAr.textContent = opt.ar;
+
+                btn.appendChild(spanEn);
+                btn.appendChild(spanAr);
+
+                var audioBtn = document.createElement("button");
+                audioBtn.type = "button";
+                audioBtn.className = "opt-audio-btn";
+                audioBtn.setAttribute("data-action", "player-speak-option");
+                audioBtn.setAttribute("data-index", i);
+                audioBtn.textContent = "🔊";
+
+                rowDiv.appendChild(btn);
+                rowDiv.appendChild(audioBtn);
+                optContainer.appendChild(rowDiv);
+            }
+
+            if (playerHasAnsweredCurrent) {
+                var fb = document.getElementById("player-feedback");
+                fb.className = "feedback correct";
+                fb.textContent = "🔒 Answer locked in! Waiting for the other Breakout Room to finish...";
+                fb.style.display = "block";
+            }
+        } else if (room.status === "reveal" && room.roundResult) {
+            clearInterval(playerTimerInterval);
+            waitBox.style.display = "none";
+            qArea.style.display = "block";
+
+            var res = room.roundResult;
+            var pButtons = document.querySelectorAll("#player-options .opt-btn");
+            for (var k = 0; k < pButtons.length; k++) {
+                pButtons[k].disabled = true;
+                if (k === res.correctIndex) {
+                    pButtons[k].style.background = "#d4edda";
+                    pButtons[k].style.borderColor = "#28a745";
+                    pButtons[k].style.fontWeight = "bold";
+                }
+            }
+            var myPts = (playerTeamNumber === 1) ? res.pts1 : res.pts2;
+            setFeedbackMessage(
+                document.getElementById("player-feedback"),
+                myPts > 0,
+                res.summaryHeader,
+                null,
+                res.explanation
+            );
+        } else if (room.status === "finished") {
+            clearInterval(playerTimerInterval);
+            qArea.style.display = "none";
+            waitBox.style.display = "block";
+            document.getElementById("player-waiting-msg").innerHTML =
+                "<strong style='font-size:1.3em; color:#1b4332;'>🏆 Match Completed! / انتهى التحدي</strong><br><br>" +
+                (room.team1Name || "Team 1") + ": <strong>" + (room.score1 || 0) + " pts</strong><br>" +
+                (room.team2Name || "Team 2") + ": <strong>" + (room.score2 || 0) + " pts</strong>";
+        }
+    }
+
+    function startPlayerSyncedTimer(limitSec, startedAtMs) {
+        clearInterval(playerTimerInterval);
+        var badge = document.getElementById("player-timer-badge");
+        function tick() {
+            var elapsed = startedAtMs ? Math.floor((Date.now() - startedAtMs) / 1000) : 0;
+            if (elapsed < 0) elapsed = 0;
+            var rem = Math.max(0, limitSec - elapsed);
+            badge.textContent = "⏱️ " + rem + "s";
+            if (rem <= 5) badge.classList.add("timer-danger");
+            else badge.classList.remove("timer-danger");
+            if (rem <= 0) clearInterval(playerTimerInterval);
+        }
+        tick();
+        playerTimerInterval = setInterval(tick, 500);
+    }
+
+    function submitPlayerAnswer(choiceIndex) {
+        if (!playerRoomRef || playerHasAnsweredCurrent) return;
+        playerHasAnsweredCurrent = true;
+        playSound('tick');
+        playerRoomRef.child("answers/team" + playerTeamNumber).set({
+            choice: choiceIndex,
+            timestamp: firebase.database.ServerValue.TIMESTAMP
+        });
+    }
+
+    // Check URL query parameters (?room=XXXX&team=1) for 1-click Zoom link joining
+    (function checkUrlJoinParams() {
+        var params = new URLSearchParams(window.location.search);
+        var roomParam = params.get("room");
+        var teamParam = params.get("team");
+        if (roomParam) {
+            openPlayerJoinView(roomParam, teamParam || "1");
+            if (roomParam.length === 4 && teamParam && isFirebaseReady) {
+                connectPlayerToRoom();
+            }
+        }
+    })();
+
+    // =========================================================================
+    // ADMIN CUSTOM QUESTIONS & EVENT LISTENERS
+    // =========================================================================
+    function renderCustomQuestionsList() {
+        var track = document.getElementById("manage-track-select").value;
+        var listContainer = document.getElementById("custom-questions-list");
+        var stored = JSON.parse(localStorage.getItem("tajweed_duallang_" + track) || "[]");
+        listContainer.innerHTML = "";
+
+        if (stored.length === 0) {
+            var emptyP = document.createElement("p");
+            emptyP.style.color = "#64748b";
+            emptyP.style.fontSize = "0.9em";
+            emptyP.style.margin = "8px 0 0 0";
+            emptyP.textContent = "No custom questions added for this level yet. / لا توجد أسئلة مخصصة لهذا المستوى بعد.";
+            listContainer.appendChild(emptyP);
+            return;
+        }
+
+        for (var i = 0; i < stored.length; i++) {
+            var itemDiv = document.createElement("div");
+            itemDiv.className = "custom-q-item";
+
+            var textDiv = document.createElement("div");
+            textDiv.className = "custom-q-text";
+            
+            var titleStrong = document.createElement("strong");
+            titleStrong.textContent = (i + 1) + ". [" + stored[i].topic + "] ";
+            textDiv.appendChild(titleStrong);
+
+            var enSpan = document.createElement("span");
+            enSpan.textContent = stored[i].qEn + " / ";
+            textDiv.appendChild(enSpan);
+
+            var arSpan = document.createElement("span");
+            arSpan.style.color = "#0f766e";
+            arSpan.style.fontWeight = "bold";
+            arSpan.textContent = stored[i].qAr;
+            textDiv.appendChild(arSpan);
+
+            var delBtn = document.createElement("button");
+            delBtn.type = "button";
+            delBtn.className = "btn-danger-sm";
+            delBtn.setAttribute("data-action", "delete-custom-q");
+            delBtn.setAttribute("data-track", track);
+            delBtn.setAttribute("data-qindex", i);
+            delBtn.textContent = "🗑️ Delete";
+
+            itemDiv.appendChild(textDiv);
+            itemDiv.appendChild(delBtn);
+            listContainer.appendChild(itemDiv);
+        }
+    }
+
+    document.getElementById("manage-track-select").addEventListener("change", renderCustomQuestionsList);
+
+    document.getElementById("admin-pass-input").addEventListener("keypress", function(e) {
+        if (e.key === "Enter") { e.preventDefault(); verifyPassword(); }
+    });
+
+    document.getElementById("import-file-input").addEventListener("change", function(e) {
+        var file = e.target.files[0];
+        if (!file) return;
+        var reader = new FileReader();
+        reader.onload = function(evt) {
+            try {
+                var imported = JSON.parse(evt.target.result);
+                if (imported.easy) localStorage.setItem("tajweed_duallang_easy", JSON.stringify(imported.easy));
+                if (imported.advanced) localStorage.setItem("tajweed_duallang_advanced", JSON.stringify(imported.advanced));
+                if (imported.expert) localStorage.setItem("tajweed_duallang_expert", JSON.stringify(imported.expert));
+                renderCustomQuestionsList();
+                renderTopicSelectorForLevel();
+                updateLevelMenuBadges();
+                showAdminAlert("Backup questions imported successfully!");
+            } catch (err) { alert("Invalid backup file format!"); }
+        };
+        reader.readAsText(file);
+    });
+
+    function verifyPassword() {
+        var passVal = document.getElementById("admin-pass-input").value;
+        var errorMsg = document.getElementById("pass-error-msg");
+        if (passVal === adminPassword) {
+            document.getElementById("password-modal").style.display = "none";
+            document.getElementById("admin-pass-input").value = "";
+            errorMsg.style.display = "none";
+            clearInterval(timerInterval);
+            document.getElementById("game-view-container").style.display = "none";
+            document.getElementById("admin-panel").style.display = "block";
+            document.getElementById("btn-admin-view").classList.add("active");
+            document.getElementById("btn-game-view").classList.remove("active");
+            updateFirebaseStatusBadges();
+            renderTopicSelectorForLevel();
+            renderCustomQuestionsList();
+        } else { errorMsg.style.display = "block"; }
+    }
+
+    document.addEventListener("click", function(e) {
+        var target = e.target.closest("[data-action]");
+        if (!target) return;
+
+        var action = target.getAttribute("data-action");
+        if (action === "switch-view") {
+            var view = target.getAttribute("data-view");
+            if (view === "admin") {
+                if (document.getElementById("admin-panel").style.display === "block") return;
+                document.getElementById("pass-error-msg").style.display = "none";
+                document.getElementById("admin-pass-input").value = "";
+                document.getElementById("password-modal").style.display = "block";
+                document.getElementById("admin-pass-input").focus();
+            } else {
+                document.getElementById("password-modal").style.display = "none";
+                document.getElementById("admin-panel").style.display = "none";
+                document.getElementById("game-view-container").style.display = "block";
+                document.getElementById("btn-game-view").classList.add("active");
+                document.getElementById("btn-admin-view").classList.remove("active");
+                updateLevelMenuBadges();
+                returnToMenu();
+            }
+        } else if (action === "open-player-join") {
+            openPlayerJoinView();
+        } else if (action === "player-connect-room") {
+            connectPlayerToRoom();
+        } else if (action === "player-submit-answer") {
+            var pIdx = parseInt(target.getAttribute("data-index"), 10);
+            submitPlayerAnswer(pIdx);
+        } else if (action === "player-speak-question") {
+            if (playerLatestQuestion) speakArabic(playerLatestQuestion.qAr);
+        } else if (action === "player-speak-option") {
+            var pOptIdx = parseInt(target.getAttribute("data-index"), 10);
+            if (playerLatestQuestion && playerLatestQuestion.options[pOptIdx]) {
+                speakArabic(playerLatestQuestion.options[pOptIdx].ar);
+            }
+        } else if (action === "select-play-mode") {
+            selectedPlayMode = target.getAttribute("data-mode");
+            document.getElementById("mode-card-local").classList.toggle("selected", selectedPlayMode === "local");
+            document.getElementById("mode-card-live").classList.toggle("selected", selectedPlayMode === "live");
+            document.getElementById("live-setup-options").style.display = (selectedPlayMode === "live") ? "block" : "none";
+            document.getElementById("btn-start-match").textContent = (selectedPlayMode === "live")
+                ? "Create Live Room Code / إنشاء غرفة مباشرة →"
+                : "Start Challenge Now / ابدأ التحدي الآن →";
+            updateFirebaseStatusBadges();
+        } else if (action === "copy-team-link") {
+            var tNum = target.getAttribute("data-team");
+            var baseUrl = window.location.origin + window.location.pathname;
+            var fullLink = baseUrl + "?room=" + liveRoomCode + "&team=" + tNum;
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(fullLink);
+            } else {
+                prompt("Copy Team " + tNum + " Zoom Link:", fullLink);
+            }
+            var toast = document.getElementById("copy-link-toast");
+            toast.textContent = "✅ Copied Team " + tNum + " Link! Paste it into Zoom Chat.";
+            setTimeout(function() { toast.textContent = ""; }, 3000);
+        } else if (action === "host-launch-live-match") {
+            hostStartLiveMatchFromLobby();
+        } else if (action === "save-firebase-config") {
+            var rawJson = document.getElementById("set-firebase-config").value.trim();
+            try {
+                var cleaned = rawJson.replace(/^[^{]*/, "").replace(/[^}]*$/, "");
+                var cfgObj = JSON.parse(cleaned);
+                if (!cfgObj.databaseURL || !cfgObj.apiKey) {
+                    alert("Config must include both 'apiKey' and 'databaseURL'!");
+                    return;
+                }
+                localStorage.setItem("tajweed_firebase_config", JSON.stringify(cfgObj));
+                initFirebaseFromConfig(cfgObj);
+                updateFirebaseStatusBadges();
+                showAdminAlert("Firebase configuration saved & connected!");
+            } catch (err) {
+                alert("Invalid JSON format. Please copy the JSON object from Firebase Project Settings.");
+            }
+        } else if (action === "select-all-topics") {
+            var lvlAll = document.getElementById("topic-filter-track").value;
+            var allNames = getUniqueTopicsWithCounts(lvlAll).map(function(item) { return item.topic; });
+            saveEnabledTopicsForLevel(lvlAll, allNames);
+            renderTopicSelectorForLevel();
+            showAdminAlert("All topics enabled for this level!");
+        } else if (action === "deselect-all-topics") {
+            var lvlNone = document.getElementById("topic-filter-track").value;
+            var allList = getUniqueTopicsWithCounts(lvlNone);
+            if (allList.length > 0) {
+                saveEnabledTopicsForLevel(lvlNone, [allList[0].topic]);
+                renderTopicSelectorForLevel();
+                showAdminAlert("Cleared all except first topic (at least 1 topic required).");
+            }
+        } else if (action === "toggle-mute") {
+            isMuted = !isMuted;
+            target.textContent = isMuted ? "🔇 SFX Off" : "🔊 SFX On";
+        } else if (action === "open-lab") {
+            document.getElementById("tajweed-lab-modal").style.display = "block";
+        } else if (action === "close-lab") {
+            clearInterval(maddBeatTimer);
+            document.getElementById("tajweed-lab-modal").style.display = "none";
+        } else if (action === "play-madd-beats") {
+            var beats = parseInt(target.getAttribute("data-beats"), 10);
+            playMaddMetronome(beats);
+        } else if (action === "show-tajweed-rule") {
+            var ruleKey = target.getAttribute("data-rule");
+            var sample = tajweedLabSamples[ruleKey];
+            if (sample) {
+                document.getElementById("tajweed-rule-display").innerHTML = sample.html;
+                document.getElementById("tajweed-rule-note").textContent = sample.note;
+                currentLabTts = sample.tts;
+                speakArabic(sample.tts);
+            }
+        } else if (action === "speak-lab-sample") {
+            speakArabic(currentLabTts);
+        } else if (action === "speak-question") {
+            var qData = activePath[currentQuestion];
+            if (qData) speakArabic(qData.qAr);
+        } else if (action === "speak-option") {
+            var optIdx = parseInt(target.getAttribute("data-index"), 10);
+            var qDataOpt = activePath[currentQuestion];
+            if (qDataOpt && qDataOpt.options[optIdx]) speakArabic(qDataOpt.options[optIdx].ar);
+        } else if (action === "use-5050") {
+            useFiftyFiftyLifeline();
+        } else if (action === "use-extra-time") {
+            useExtraTimeLifeline();
+        } else if (action === "toggle-fullscreen") {
+            var card = document.querySelector(".game-card");
+            if (!document.fullscreenElement && !document.webkitFullscreenElement && !isCssFullscreenActive) {
+                var docElem = document.documentElement;
+                if (docElem.requestFullscreen) {
+                    docElem.requestFullscreen().catch(function() { enableCssFullscreen(card); });
+                } else if (docElem.webkitRequestFullscreen) {
+                    docElem.webkitRequestFullscreen();
+                } else {
+                    enableCssFullscreen(card);
+                }
+            } else {
+                if (document.fullscreenElement || document.webkitFullscreenElement) {
+                    if (document.exitFullscreen) document.exitFullscreen();
+                    else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+                } else if (isCssFullscreenActive) {
+                    disableCssFullscreen(card);
+                }
+            }
+        } else if (action === "open-rules") {
+            document.getElementById("rules-modal").style.display = "block";
+        } else if (action === "close-rules") {
+            document.getElementById("rules-modal").style.display = "none";
+        } else if (action === "submit-password") {
+            verifyPassword();
+        } else if (action === "cancel-password") {
+            document.getElementById("password-modal").style.display = "none";
+            document.getElementById("admin-pass-input").value = "";
+            document.getElementById("pass-error-msg").style.display = "none";
+        } else if (action === "choose-path") {
+            currentPathName = target.getAttribute("data-path");
+            document.getElementById("menu-container").style.display = "none";
+            document.getElementById("setup-container").style.display = "block";
+            updateFirebaseStatusBadges();
+        } else if (action === "start-game") {
+            var t1Input = document.getElementById("input-team1").value.trim();
+            var t2Input = document.getElementById("input-team2").value.trim();
+            if (t1Input) team1Name = t1Input;
+            if (t2Input) team2Name = t2Input;
+            document.getElementById("lbl-team1").textContent = team1Name;
+            document.getElementById("lbl-team2").textContent = team2Name;
+
+            if (selectedPlayMode === "live") {
+                hostCreateLiveLobby();
+            } else {
+                startLocalGame();
+            }
+        } else if (action === "next") {
+            clearInterval(autoAdvanceTimeout);
+            nextQuestion();
+        } else if (action === "restart") {
+            returnToMenu();
+        } else if (action === "answer") {
+            var idx = parseInt(target.getAttribute("data-index"), 10);
+            selectAnswer(idx, target);
+        } else if (action === "trigger-transfer") {
+            startTransferPhase();
+        } else if (action === "reveal-answer") {
+            revealAndSkip();
+        } else if (action === "refresh-leaderboard") {
+            fetchLiveLeaderboard();
+        } else if (action === "print-certificate") {
+            window.print();
+        } else if (action === "export-match-report") {
+            exportMatchSummaryReport();
+        } else if (action === "save-settings") {
+            var newPin = document.getElementById("set-admin-pass").value.trim();
+            if (!newPin) {
+                alert("Admin PIN cannot be empty!");
+                return;
+            }
+            adminPassword = newPin;
+            localStorage.setItem("tajweed_admin_pass", newPin);
+            localStorage.setItem("tajweed_easy_time", document.getElementById("set-easy-time").value);
+            localStorage.setItem("tajweed_adv_time", document.getElementById("set-adv-time").value);
+            localStorage.setItem("tajweed_exp_time", document.getElementById("set-exp-time").value);
+            localStorage.setItem("tajweed_q_count", document.getElementById("set-q-count").value);
+            updateMenuSubtitle();
+            showAdminAlert("Match & security settings saved successfully!");
+        } else if (action === "add-question") {
+            addNewQuestionToStorage();
+        } else if (action === "delete-custom-q") {
+            var delTrack = target.getAttribute("data-track");
+            var delIndex = parseInt(target.getAttribute("data-qindex"), 10);
+            var stored = JSON.parse(localStorage.getItem("tajweed_duallang_" + delTrack) || "[]");
+            stored.splice(delIndex, 1);
+            localStorage.setItem("tajweed_duallang_" + delTrack, JSON.stringify(stored));
+            renderCustomQuestionsList();
+            renderTopicSelectorForLevel();
+            updateLevelMenuBadges();
+            showAdminAlert("Custom question deleted.");
+        } else if (action === "export-questions") {
+            var exportData = {
+                easy: JSON.parse(localStorage.getItem("tajweed_duallang_easy") || "[]"),
+                advanced: JSON.parse(localStorage.getItem("tajweed_duallang_advanced") || "[]"),
+                expert: JSON.parse(localStorage.getItem("tajweed_duallang_expert") || "[]")
+            };
+            var dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportData, null, 2));
+            var dlAnchor = document.createElement('a');
+            dlAnchor.setAttribute("href", dataStr);
+            dlAnchor.setAttribute("download", "tajweed_3_levels_dual_backup.json");
+            document.body.appendChild(dlAnchor); dlAnchor.click(); dlAnchor.remove();
+            showAdminAlert("Backup exported successfully!");
+        } else if (action === "trigger-import") {
+            document.getElementById("import-file-input").click();
+        }
+    });
+
+    function enableCssFullscreen(card) {
+        isCssFullscreenActive = true;
+        card.style.position = "fixed";
+        card.style.top = "0";
+        card.style.left = "0";
+        card.style.width = "100vw";
+        card.style.height = "100vh";
+        card.style.maxWidth = "none";
+        card.style.borderRadius = "0";
+        card.style.zIndex = "99999";
+        card.style.overflowY = "auto";
+        card.style.boxSizing = "border-box";
+    }
+
+    function disableCssFullscreen(card) {
+        isCssFullscreenActive = false;
+        card.style.position = "static";
+        card.style.width = "auto";
+        card.style.height = "auto";
+        card.style.maxWidth = "860px";
+        card.style.borderRadius = "12px";
+        card.style.zIndex = "1";
+        card.style.overflowY = "visible";
+    }
+
+    function shuffleArray(array) {
+        var currentIndex = array.length, temporaryValue, randomIndex;
+        while (0 !== currentIndex) {
+            randomIndex = Math.floor(Math.random() * currentIndex);
+            currentIndex -= 1;
+            temporaryValue = array[currentIndex];
+            array[currentIndex] = array[randomIndex];
+            array[randomIndex] = temporaryValue;
+        }
+        return array;
+    }
+
+    function startLocalGame() {
+        cleanupFirebaseListeners();
+        buildQuestionPool();
+        
+        currentQuestion = 0; score1 = 0; score2 = 0; streak1 = 0; streak2 = 0; maxStreak1 = 0; maxStreak2 = 0;
+        activeTeam = 1; isTransferPhase = false; matchHistory = [];
+        lifelines = {
+            1: { fiftyFifty: true, extraTime: true },
+            2: { fiftyFifty: true, extraTime: true }
+        };
+
+        document.getElementById("host-room-pill").style.display = "none";
+        document.getElementById("t1-live-status").textContent = "";
+        document.getElementById("t2-live-status").textContent = "";
+        updateScoresUI();
+        document.getElementById("setup-container").style.display = "none";
+        document.getElementById("summary-container").style.display = "none";
+        document.getElementById("quiz-container").style.display = "block";
+        document.getElementById("live-stats").style.display = "flex";
+        document.getElementById("lifeline-bar").style.display = "flex";
+        document.getElementById("timer-bar-container").style.display = "block";
+
+        loadQuestion();
+    }
+
+    function updateScoresUI() {
+        document.getElementById("score1").textContent = score1;
+        document.getElementById("score2").textContent = score2;
+        document.getElementById("streak1").textContent = streak1;
+        document.getElementById("streak2").textContent = streak2;
+
+        var t1Box = document.getElementById("t1-box");
+        var t2Box = document.getElementById("t2-box");
+        var banner = document.getElementById("turn-banner");
+        var currentTeamName = (activeTeam === 1) ? team1Name : team2Name;
+
+        if (selectedPlayMode === "live") {
+            t1Box.classList.add("active-turn");
+            t2Box.classList.add("active-turn");
+            banner.textContent = "🌐 Live Zoom Breakout Room Mode — Both Teams Answering Simultaneously!";
+            banner.style.background = "#dbeafe";
+            banner.style.color = "#1e40af";
+            return;
+        }
+
+        if (activeTeam === 1) { t1Box.classList.add("active-turn"); t2Box.classList.remove("active-turn"); }
+        else { t2Box.classList.add("active-turn"); t1Box.classList.remove("active-turn"); }
+
+        var btn5050 = document.getElementById("btn-lifeline-5050");
+        var btnTime = document.getElementById("btn-lifeline-time");
+        if (btn5050 && btnTime) {
+            btn5050.disabled = !lifelines[activeTeam].fiftyFifty || isTransferPhase;
+            btnTime.disabled = !lifelines[activeTeam].extraTime;
+        }
+
+        if (isTransferPhase) {
+            banner.textContent = "🔄 Transfer Phase / مرحلة التحويل! Turn / الدور: " + currentTeamName;
+            banner.style.background = "#fef3c7"; banner.style.color = "#92400e";
+        } else {
+            banner.textContent = "Turn / الدور: " + currentTeamName;
+            banner.style.background = (activeTeam === 1) ? "#e0f2fe" : "#fce7f3";
+            banner.style.color = (activeTeam === 1) ? "#0369a1" : "#be185d";
+        }
+    }
+
+    function useFiftyFiftyLifeline() {
+        if (!lifelines[activeTeam].fiftyFifty || isTransferPhase) return;
+        var qData = activePath[currentQuestion];
+        var buttons = document.querySelectorAll(".opt-btn");
+        var wrongIndices = [];
+        for (var i = 0; i < buttons.length; i++) {
+            if (i !== qData.correct && !buttons[i].disabled) wrongIndices.push(i);
+        }
+        shuffleArray(wrongIndices);
+        var toRemove = wrongIndices.slice(0, 2);
+        for (var j = 0; j < toRemove.length; j++) {
+            var btn = buttons[toRemove[j]];
+            btn.disabled = true;
+            btn.style.opacity = "0.35";
+            btn.setAttribute("data-eliminated", "true");
+        }
+        lifelines[activeTeam].fiftyFifty = false;
+        playSound('tick');
+        updateScoresUI();
+    }
+
+    function useExtraTimeLifeline() {
+        if (!lifelines[activeTeam].extraTime) return;
+        timeLeft += 15;
+        if (timeLeft > timeLimit + 15) timeLeft = timeLimit + 15;
+        lifelines[activeTeam].extraTime = false;
+        playSound('correct');
+        updateTimerUI();
+        updateScoresUI();
+    }
+
+    function startTimer() {
+        clearInterval(timerInterval);
+        timeLeft = timeLimit;
+        updateTimerUI();
+        timerInterval = setInterval(function() {
+            timeLeft--;
+            updateTimerUI();
+            if (timeLeft <= 5 && timeLeft > 0) playSound('tick');
+            if (timeLeft <= 0) { clearInterval(timerInterval); playSound('wrong'); handleTimeOut(); }
+        }, 1000);
+    }
+
+    function updateTimerUI() {
+        var timerDisplay = document.getElementById("timer-display");
+        var timerBar = document.getElementById("timer-bar");
+        timerDisplay.textContent = "⏱️ " + timeLeft + "s";
+        var pct = Math.min(100, (timeLeft / timeLimit) * 100);
+        timerBar.style.width = pct + "%";
+        if (timeLeft <= 5) timerDisplay.classList.add("timer-danger");
+        else timerDisplay.classList.remove("timer-danger");
+    }
+
+    function setFeedbackMessage(el, isCorrect, headerText, bodyText, explanationText) {
+        el.innerHTML = "";
+        el.className = isCorrect ? "feedback correct" : "feedback incorrect";
+        
+        var strong = document.createElement("strong");
+        strong.textContent = headerText;
+        el.appendChild(strong);
+
+        if (bodyText) {
+            el.appendChild(document.createElement("br"));
+            var spanBody = document.createElement("span");
+            spanBody.textContent = bodyText;
+            el.appendChild(spanBody);
+        }
+
+        if (explanationText) {
+            el.appendChild(document.createElement("br"));
+            el.appendChild(document.createElement("br"));
+            var em = document.createElement("em");
+            em.textContent = "Explanation / التوضيح: ";
+            el.appendChild(em);
+            var spanExp = document.createElement("span");
+            spanExp.textContent = explanationText;
+            el.appendChild(spanExp);
+        }
+        el.style.display = "block";
+    }
+
+    function loadQuestion() {
+        isTransferPhase = false;
+        document.getElementById("transfer-btn").style.display = "none";
+        document.getElementById("reveal-btn").style.display = "none";
+        
+        var isFinalQuestion = (currentQuestion === activePath.length - 1);
+        document.getElementById("double-pts-badge").style.display = isFinalQuestion ? "inline-block" : "none";
+
+        updateScoresUI();
+        var qData = activePath[currentQuestion];
+        document.getElementById("topic").textContent = qData.topic;
+        
+        document.getElementById("q-en-text").textContent = (currentQuestion + 1) + ". " + qData.qEn;
+        document.getElementById("q-ar-text").textContent = qData.qAr;
+        document.getElementById("progress").textContent = "Question " + (currentQuestion + 1) + " of " + activePath.length;
+        
+        var optContainer = document.getElementById("options");
+        optContainer.innerHTML = "";
+        for (var i = 0; i < qData.options.length; i++) {
+            var rowDiv = document.createElement("div");
+            rowDiv.className = "opt-row";
+
+            var btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "opt-btn";
+            if (selectedPlayMode === "local") {
+                btn.setAttribute("data-action", "answer");
+                btn.setAttribute("data-index", i);
+            } else {
+                btn.disabled = true;
+            }
+
+            var spanEn = document.createElement("span");
+            spanEn.className = "opt-en";
+            spanEn.textContent = qData.options[i].en;
+
+            var spanAr = document.createElement("span");
+            spanAr.className = "opt-ar";
+            spanAr.setAttribute("dir", "rtl");
+            spanAr.textContent = qData.options[i].ar;
+
+            btn.appendChild(spanEn);
+            btn.appendChild(spanAr);
+
+            var audioBtn = document.createElement("button");
+            audioBtn.type = "button";
+            audioBtn.className = "opt-audio-btn";
+            audioBtn.setAttribute("data-action", "speak-option");
+            audioBtn.setAttribute("data-index", i);
+            audioBtn.title = "Listen to Arabic option";
+            audioBtn.textContent = "🔊";
+
+            rowDiv.appendChild(btn);
+            rowDiv.appendChild(audioBtn);
+            optContainer.appendChild(rowDiv);
+        }
+        document.getElementById("feedback").style.display = "none";
+        document.getElementById("next-btn").style.display = "none";
+
+        if (selectedPlayMode === "live") {
+            hostPushLiveQuestion(qData);
+        }
+        startTimer();
+    }
+
+    function highlightCorrectAnswer(qData, buttons) {
+        for (var i = 0; i < buttons.length; i++) {
+            buttons[i].disabled = true;
+            if (i === qData.correct) {
+                buttons[i].style.opacity = "1";
+                buttons[i].style.background = "#d4edda";
+                buttons[i].style.borderColor = "#28a745";
+                buttons[i].style.fontWeight = "bold";
+            }
+        }
+    }
+
+    function recordMatchQuestion(qData, wasAnsweredCorrectly, outcomeLabel) {
+        matchHistory.push({
+            number: currentQuestion + 1,
+            topic: qData.topic,
+            qEn: qData.qEn,
+            qAr: qData.qAr,
+            correctOpt: qData.options[qData.correct],
+            explanation: qData.explanation,
+            solved: wasAnsweredCorrectly,
+            outcome: outcomeLabel
+        });
+    }
+
+    function handleTimeOut() {
+        clearInterval(timerInterval);
+        if (selectedPlayMode === "live" && liveRoomRef) {
+            liveRoomRef.child("answers").once("value", function(snap) {
+                var ans = snap.val() || {};
+                evaluateLiveSimultaneousRound(ans.team1 || null, ans.team2 || null);
+            });
+            return;
+        }
+
+        var qData = activePath[currentQuestion];
+        var buttons = document.querySelectorAll(".opt-btn");
+        var currentTeamName = (activeTeam === 1) ? team1Name : team2Name;
+        var feedback = document.getElementById("feedback");
+
+        if (!isTransferPhase) {
+            if (activeTeam === 1) streak1 = 0; else streak2 = 0;
+            updateScoresUI();
+            for (var i = 0; i < buttons.length; i++) { buttons[i].disabled = true; }
+            setFeedbackMessage(
+                feedback,
+                false,
+                "⏰ Time's up / انتهى الوقت لفريق " + currentTeamName + "!",
+                "You can transfer this question or reveal the answer! / يمكنك تحويل السؤال أو إظهار الإجابة!",
+                null
+            );
+            document.getElementById("transfer-btn").style.display = "inline-block";
+            document.getElementById("reveal-btn").style.display = "inline-block";
+        } else {
+            updateScoresUI();
+            highlightCorrectAnswer(qData, buttons);
+            recordMatchQuestion(qData, false, "Timed out on transfer (" + currentTeamName + ")");
+            setFeedbackMessage(
+                feedback,
+                false,
+                "⏰ Time's up on transfer too! No points. / انتهى وقت التحويل!",
+                null,
+                qData.explanation
+            );
+            showNextButton();
+        }
+    }
+
+    function selectAnswer(selectedIndex, selectedBtn) {
+        if (selectedBtn.disabled || selectedPlayMode === "live") return;
+        clearInterval(timerInterval);
+        var qData = activePath[currentQuestion];
+        var feedback = document.getElementById("feedback");
+        var buttons = document.querySelectorAll(".opt-btn");
+        var currentTeamName = (activeTeam === 1) ? team1Name : team2Name;
+        var isFinalQuestion = (currentQuestion === activePath.length - 1);
+
+        if (selectedIndex === qData.correct) {
+            highlightCorrectAnswer(qData, buttons);
+            playSound('correct');
+
+            var basePts = 1;
+            var speedBonus = (!isTransferPhase && timeLeft > (timeLimit * 0.5)) ? 1 : 0;
+            var streakBonus = 0;
+
+            if (activeTeam === 1) {
+                streak1++;
+                if (streak1 > maxStreak1) maxStreak1 = streak1;
+                if (streak1 >= 3) streakBonus = 1;
+            } else {
+                streak2++;
+                if (streak2 > maxStreak2) maxStreak2 = streak2;
+                if (streak2 >= 3) streakBonus = 1;
+            }
+
+            var totalEarned = basePts + speedBonus + streakBonus;
+            if (isFinalQuestion) totalEarned *= 2;
+
+            if (activeTeam === 1) {
+                score1 += totalEarned;
+                syncScoreToSheet(team1Name, score1);
+            } else {
+                score2 += totalEarned;
+                syncScoreToSheet(team2Name, score2);
+            }
+
+            var bonusNotes = [];
+            if (speedBonus > 0) bonusNotes.push("⚡ +1 Speed");
+            if (streakBonus > 0) bonusNotes.push("🔥 +1 Streak");
+            if (isFinalQuestion) bonusNotes.push("⭐ 2x Finale");
+            var bonusText = bonusNotes.length > 0 ? " [" + bonusNotes.join(", ") + "]" : "";
+
+            var label = (isTransferPhase ? "Stolen by " : "Solved by ") + currentTeamName + " (+" + totalEarned + " pts)";
+            recordMatchQuestion(qData, true, label);
+            setFeedbackMessage(
+                feedback,
+                true,
+                "Correct / إجابة صحيحة من " + currentTeamName + "! (+" + totalEarned + " pts" + bonusText + ")",
+                null,
+                qData.explanation
+            );
+            updateScoresUI();
+            showNextButton();
+        } else {
+            playSound('wrong');
+            selectedBtn.style.background = "#f8d7da";
+            selectedBtn.style.borderColor = "#dc3545";
+            selectedBtn.setAttribute("data-eliminated", "true");
+            
+            if (!isTransferPhase) {
+                if (activeTeam === 1) streak1 = 0; else streak2 = 0;
+                updateScoresUI();
+                for (var i = 0; i < buttons.length; i++) { buttons[i].disabled = true; }
+                setFeedbackMessage(
+                    feedback,
+                    false,
+                    "Incorrect / إجابة غير صحيحة من " + currentTeamName + ".",
+                    "Would you like to transfer the question or reveal the answer? / هل تريد تحويل السؤال أم إظهار الإجابة؟",
+                    null
+                );
+                document.getElementById("transfer-btn").style.display = "inline-block";
+                document.getElementById("reveal-btn").style.display = "inline-block";
+            } else {
+                updateScoresUI();
+                highlightCorrectAnswer(qData, buttons);
+                recordMatchQuestion(qData, false, "Missed on transfer by " + currentTeamName);
+                setFeedbackMessage(
+                    feedback,
+                    false,
+                    "Incorrect on transfer / إجابة غير صحيحة في التحويل.",
+                    null,
+                    qData.explanation
+                );
+                showNextButton();
+            }
+        }
+    }
+
+    function revealAndSkip() {
+        var qData = activePath[currentQuestion];
+        var buttons = document.querySelectorAll(".opt-btn");
+        var feedback = document.getElementById("feedback");
+        document.getElementById("transfer-btn").style.display = "none";
+        document.getElementById("reveal-btn").style.display = "none";
+        highlightCorrectAnswer(qData, buttons);
+        recordMatchQuestion(qData, false, "Answer revealed (No points)");
+        setFeedbackMessage(
+            feedback,
+            false,
+            "Answer Revealed / تم إظهار الإجابة الصحيحة (No points awarded).",
+            null,
+            qData.explanation
+        );
+        showNextButton();
+    }
+
+    function startTransferPhase() {
+        isTransferPhase = true;
+        activeTeam = (activeTeam === 1) ? 2 : 1;
+        document.getElementById("transfer-btn").style.display = "none";
+        document.getElementById("reveal-btn").style.display = "none";
+        document.getElementById("feedback").style.display = "none";
+        updateScoresUI();
+        var buttons = document.querySelectorAll(".opt-btn");
+        for (var i = 0; i < buttons.length; i++) {
+            if (buttons[i].getAttribute("data-eliminated") === "true") {
+                buttons[i].disabled = true;
+            } else {
+                buttons[i].disabled = false;
+                buttons[i].style.opacity = "1";
+                buttons[i].style.background = "#f8fafc";
+                buttons[i].style.borderColor = "#cbd5e1";
+                buttons[i].style.fontWeight = "normal";
+            }
+        }
+        startTimer();
+    }
+
+    function showNextButton() {
+        var nextBtn = document.getElementById("next-btn");
+        nextBtn.style.display = "inline-block";
+        nextBtn.textContent = (currentQuestion < activePath.length - 1) ? "Next Question / السؤال التالي →" : "View Final Results / عرض النتائج";
+    }
+
+    function nextQuestion() {
+        clearInterval(autoAdvanceTimeout);
+        currentQuestion++;
+        activeTeam = (currentQuestion % 2 === 0) ? 1 : 2;
+        if (currentQuestion < activePath.length) loadQuestion(); else showSummary();
+    }
+
+    function renderMatchReview() {
+        var listEl = document.getElementById("match-review-list");
+        listEl.innerHTML = "";
+        for (var i = 0; i < matchHistory.length; i++) {
+            var item = matchHistory[i];
+            var div = document.createElement("div");
+            div.className = "review-item";
+
+            var headerDiv = document.createElement("div");
+            headerDiv.style.display = "flex";
+            headerDiv.style.justifyContent = "space-between";
+            headerDiv.style.alignItems = "center";
+            headerDiv.style.marginBottom = "4px";
+
+            var qTitle = document.createElement("strong");
+            qTitle.textContent = "Q" + item.number + ": " + item.qEn;
+
+            var badge = document.createElement("span");
+            badge.className = item.solved ? "badge-correct" : "badge-missed";
+            badge.textContent = item.outcome;
+
+            headerDiv.appendChild(qTitle);
+            headerDiv.appendChild(badge);
+
+            var arP = document.createElement("div");
+            arP.style.color = "#0f766e";
+            arP.style.fontWeight = "bold";
+            arP.style.fontFamily = "'Amiri', serif";
+            arP.style.fontSize = "1.1em";
+            arP.textContent = item.qAr;
+
+            var ansP = document.createElement("div");
+            ansP.style.fontSize = "0.9em";
+            ansP.style.color = "#155724";
+            ansP.style.marginTop = "4px";
+            ansP.textContent = "✓ Answer: " + item.correctOpt.en + " (" + item.correctOpt.ar + ")";
+
+            div.appendChild(headerDiv);
+            div.appendChild(arP);
+            div.appendChild(ansP);
+            listEl.appendChild(div);
+        }
+    }
+
+    function exportMatchSummaryReport() {
+        var dateStr = new Date().toLocaleDateString();
+        var levelNames = { easy: "Level 1: Core Tajweed", advanced: "Level 2: Advanced Rules", expert: "Level 3: Expert Recitation" };
+        var lines = [
+            "TAJWEED HALAQAH CHALLENGE - MATCH SUMMARY REPORT",
+            "Date: " + dateStr,
+            "Level: " + (levelNames[currentPathName] || currentPathName),
+            "--------------------------------------------------",
+            team1Name + ": " + score1 + " pts (Best Streak: " + maxStreak1 + ")",
+            team2Name + ": " + score2 + " pts (Best Streak: " + maxStreak2 + ")",
+            "--------------------------------------------------",
+            "QUESTION REVIEW:",
+            ""
+        ];
+        for (var i = 0; i < matchHistory.length; i++) {
+            var h = matchHistory[i];
+            lines.push("Q" + h.number + " [" + h.topic + "] - " + h.outcome);
+            lines.push("  EN: " + h.qEn);
+            lines.push("  AR: " + h.qAr);
+            lines.push("  Correct Answer: " + h.correctOpt.en + " | " + h.correctOpt.ar);
+            lines.push("  Explanation: " + h.explanation);
+            lines.push("");
+        }
+        var blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement("a");
+        a.href = url;
+        a.download = "Tajweed_Match_Report_" + dateStr.replace(/\//g, "-") + ".txt";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+    }
+
+    function showSummary() {
+        clearInterval(timerInterval);
+        clearInterval(autoAdvanceTimeout);
+        if (selectedPlayMode === "live" && liveRoomRef) {
+            liveRoomRef.update({
+                status: "finished",
+                score1: score1,
+                score2: score2
+            });
+        }
+        document.getElementById("quiz-container").style.display = "none";
+        document.getElementById("live-stats").style.display = "none";
+        document.getElementById("lifeline-bar").style.display = "none";
+        document.getElementById("timer-bar-container").style.display = "none";
+        document.getElementById("summary-container").style.display = "block";
+        var winnerText = "";
+        if (score1 > score2) winnerText = "🎉 Congratulations to " + team1Name + "! / تهانينا لفوز " + team1Name + "! 🎉";
+        else if (score2 > score1) winnerText = "🎉 Congratulations to " + team2Name + "! / تهانينا لفوز " + team2Name + "! 🎉";
+        else winnerText = "🤝 It's a Tie! / تعادل بين الفريقين! 🤝";
+        document.getElementById("winner-announcement").textContent = winnerText;
+        document.getElementById("final-details").textContent = team1Name + ": " + score1 + " (🔥 Max: " + maxStreak1 + ") | " + team2Name + ": " + score2 + " (🔥 Max: " + maxStreak2 + ")";
+        
+        var levelNames = { easy: "Level 1: Core Tajweed", advanced: "Level 2: Advanced Rules", expert: "Level 3: Expert Recitation" };
+        document.getElementById("match-meta-details").textContent = (levelNames[currentPathName] || "") + " • Date: " + new Date().toLocaleDateString();
+
+        renderMatchReview();
+        fetchLiveLeaderboard();
+    }
+
+    function returnToMenu() {
+        clearInterval(timerInterval);
+        cleanupFirebaseListeners();
+        document.getElementById("summary-container").style.display = "none";
+        document.getElementById("setup-container").style.display = "none";
+        document.getElementById("lobby-container").style.display = "none";
+        document.getElementById("player-join-container").style.display = "none";
+        document.getElementById("player-game-container").style.display = "none";
+        document.getElementById("quiz-container").style.display = "none";
+        document.getElementById("live-stats").style.display = "none";
+        document.getElementById("lifeline-bar").style.display = "none";
+        document.getElementById("timer-bar-container").style.display = "none";
+        document.getElementById("menu-container").style.display = "block";
+    }
+
+    function addNewQuestionToStorage() {
+        var track = document.getElementById("q-track").value;
+        var topic = document.getElementById("q-topic").value.trim() || "Custom / مخصص";
+        var textEn = document.getElementById("q-text-en").value.trim();
+        var textAr = document.getElementById("q-text-ar").value.trim();
+        
+        var opts = [
+            { en: document.getElementById("opt-en-0").value.trim(), ar: document.getElementById("opt-ar-0").value.trim() },
+            { en: document.getElementById("opt-en-1").value.trim(), ar: document.getElementById("opt-ar-1").value.trim() },
+            { en: document.getElementById("opt-en-2").value.trim(), ar: document.getElementById("opt-ar-2").value.trim() },
+            { en: document.getElementById("opt-en-3").value.trim(), ar: document.getElementById("opt-ar-3").value.trim() }
+        ];
+        var correct = parseInt(document.getElementById("q-correct").value, 10);
+        var exp = document.getElementById("q-exp").value.trim();
+
+        var hasAllOptions = opts.every(function(o) { return o.en.length > 0 && o.ar.length > 0; });
+
+        if (!textEn || !textAr || !hasAllOptions) {
+            alert("Please fill in both English and Arabic question fields AND all 4 bilingual options!");
+            return;
+        }
+        var newQ = { topic: topic, qEn: textEn, qAr: textAr, options: opts, correct: correct, explanation: exp || "No explanation / لا توجد ملاحظة." };
+        var stored = JSON.parse(localStorage.getItem("tajweed_duallang_" + track) || "[]");
+        stored.push(newQ);
+        localStorage.setItem("tajweed_duallang_" + track, JSON.stringify(stored));
+
+        var enabled = getEnabledTopicsForLevel(track);
+        if (enabled.indexOf(topic) === -1) {
+            enabled.push(topic);
+            saveEnabledTopicsForLevel(track, enabled);
+        } else {
+            updateLevelMenuBadges();
+        }
+
+        document.getElementById("manage-track-select").value = track;
+        document.getElementById("topic-filter-track").value = track;
+        renderCustomQuestionsList();
+        renderTopicSelectorForLevel();
+        showAdminAlert("Dual-language question added & topic enabled!");
+        document.getElementById("q-text-en").value = ""; document.getElementById("q-text-ar").value = ""; document.getElementById("q-topic").value = "";
+        for(var i=0; i<4; i++) { document.getElementById("opt-en-"+i).value = ""; document.getElementById("opt-ar-"+i).value = ""; }
+        document.getElementById("q-exp").value = "";
+    }
+
+    function showAdminAlert(msg) {
+        var alertEl = document.getElementById("admin-alert");
+        alertEl.textContent = msg; alertEl.style.display = "block";
+        setTimeout(function() { alertEl.style.display = "none"; }, 2500);
+    }
+})();
+</script>
+
+</body>
+</html>
