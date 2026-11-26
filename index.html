@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tajweed Halaqah Challenge - Zoom & Classroom Edition v5.0</title>
+    <title>Tajweed Halaqah Challenge - Zoom & Classroom Edition v5.1</title>
     <!-- Google Fonts for Amiri & Scheherazade New -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -429,7 +429,7 @@
                     <span>📱 Scan to Join / امسح للانضمام</span>
                 </div>
             </div>
-            <div id="copy-link-toast" style="font-size:0.85em; color:#16a34a; font-weight:bold; height:20px;"></div>
+            <div id="copy-link-toast" style="font-size:0.85em; color:#16a34a; font-weight:bold; min-height:20px;"></div>
 
             <!-- 2-Team Lobby Cards -->
             <div class="lobby-teams-grid" id="lobby-teams-grid">
@@ -639,7 +639,11 @@
         </div>
 
         <div class="section-box">
-            <div class="section-title">⚙️ Match & Security Settings / إعدادات المباراة والأمان</div>
+            <div class="section-title">⚙️ Match, Hosting URL & Security Settings / إعدادات المباراة والرابط</div>
+            <div class="form-group">
+                <label class="admin-card-label" for="set-public-game-url">Public GitHub Pages URL (Used for QR Code & Copy Link inside Google Sites):</label>
+                <input type="text" id="set-public-game-url" placeholder="https://MElashheb.github.io/tajweed-halaqah/">
+            </div>
             <div class="form-row" style="grid-template-columns: 1fr 1fr 1fr;">
                 <div class="form-group">
                     <label class="admin-card-label" for="set-easy-time">Level 1 Timer (s):</label>
@@ -790,6 +794,64 @@
 
 <script>
 (function() {
+    // =========================================================================
+    // CLEAN GITHUB PAGES URL HELPER (Fixes Google Sites Iframe Wrapping)
+    // =========================================================================
+    var DEFAULT_GITHUB_PAGES_URL = "https://MElashheb.github.io/tajweed-halaqah/";
+
+    function getCleanGameUrl() {
+        var savedOverride = (localStorage.getItem("tajweed_public_game_url") || "").trim();
+        if (savedOverride && savedOverride.indexOf("http") === 0) {
+            return savedOverride.split("?")[0];
+        }
+        var currentUrl = window.location.href.split("?")[0];
+        if (
+            currentUrl.indexOf("googleusercontent.com") !== -1 ||
+            currentUrl.indexOf("sites.google.com") !== -1 ||
+            currentUrl.indexOf("gstatic.com") !== -1
+        ) {
+            return DEFAULT_GITHUB_PAGES_URL;
+        }
+        return currentUrl;
+    }
+
+    function copyTextSafely(textToCopy, toastElement, successLabel) {
+        function showToast() {
+            if (!toastElement) return;
+            toastElement.textContent = successLabel + " (" + textToCopy + ")";
+            setTimeout(function() { toastElement.textContent = ""; }, 4500);
+        }
+
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(textToCopy).then(showToast).catch(function() {
+                fallbackTextareaCopy();
+            });
+        } else {
+            fallbackTextareaCopy();
+        }
+
+        function fallbackTextareaCopy() {
+            try {
+                var tempArea = document.createElement("textarea");
+                tempArea.value = textToCopy;
+                tempArea.style.position = "fixed";
+                tempArea.style.opacity = "0";
+                document.body.appendChild(tempArea);
+                tempArea.focus();
+                tempArea.select();
+                var ok = document.execCommand("copy");
+                document.body.removeChild(tempArea);
+                if (ok) {
+                    showToast();
+                } else {
+                    prompt("Copy Join Link:", textToCopy);
+                }
+            } catch (err) {
+                prompt("Copy Join Link:", textToCopy);
+            }
+        }
+    }
+
     // =========================================================================
     // Firebase Configuration (tajweed-halaqah)
     // =========================================================================
@@ -1683,7 +1745,7 @@
     var liveRoomRef = null;
     var liveRoundResolved = false;
     var autoAdvanceTimeout = null;
-    var indivPlayersMap = {}; // { studentId: { name, score, streak, maxStreak } }
+    var indivPlayersMap = {};
 
     // Player Client State
     var playerRoomCode = null;
@@ -1723,6 +1785,7 @@
     if(localStorage.getItem("tajweed_adv_time")) document.getElementById("set-adv-time").value = localStorage.getItem("tajweed_adv_time");
     if(localStorage.getItem("tajweed_exp_time")) document.getElementById("set-exp-time").value = localStorage.getItem("tajweed_exp_time");
     if(localStorage.getItem("tajweed_q_count")) document.getElementById("set-q-count").value = localStorage.getItem("tajweed_q_count");
+    document.getElementById("set-public-game-url").value = getCleanGameUrl();
     document.getElementById("set-admin-pass").value = adminPassword;
 
     function updateMenuSubtitle() {
@@ -1821,14 +1884,13 @@
             ? "👤 Individual Student Room Lobby / غرفة الطلاب الفردية"
             : "🌐 Live Zoom 2-Team Room Lobby / غرفة الفرق المباشرة";
 
-        // Configure Lobby UI for 2-Team vs Individual
         document.getElementById("lobby-teams-grid").style.display = isIndiv ? "none" : "grid";
         document.getElementById("lobby-indiv-box").style.display = isIndiv ? "block" : "none";
         document.getElementById("btn-copy-t1").style.display = isIndiv ? "none" : "inline-block";
         document.getElementById("btn-copy-t2").style.display = isIndiv ? "none" : "inline-block";
         document.getElementById("btn-copy-indiv").style.display = isIndiv ? "inline-block" : "none";
 
-        var baseUrl = window.location.origin + window.location.pathname;
+        var baseUrl = getCleanGameUrl();
         var qrJoinUrl = isIndiv
             ? (baseUrl + "?room=" + liveRoomCode + "&mode=individual")
             : (baseUrl + "?room=" + liveRoomCode);
@@ -2138,7 +2200,6 @@
         recordMatchQuestion(qData, correctList.length > 0, correctList.length + " students solved");
         setFeedbackMessage(document.getElementById("feedback"), correctList.length > 0, summaryHeader, null, qData.explanation);
 
-        // Render Top 5 Podium on Host Screen
         var ranked = Object.keys(indivPlayersMap).map(function(id) {
             return indivPlayersMap[id];
         }).sort(function(a, b) { return (b.score || 0) - (a.score || 0); });
@@ -2608,6 +2669,7 @@
             document.getElementById("admin-panel").style.display = "block";
             document.getElementById("btn-admin-view").classList.add("active");
             document.getElementById("btn-game-view").classList.remove("active");
+            document.getElementById("set-public-game-url").value = getCleanGameUrl();
             updateFirebaseStatusBadges();
             renderTopicSelectorForLevel();
             renderCustomQuestionsList();
@@ -2672,20 +2734,15 @@
             updateFirebaseStatusBadges();
         } else if (action === "copy-team-link") {
             var tNum = target.getAttribute("data-team");
-            var baseUrl = window.location.origin + window.location.pathname;
+            var baseUrl = getCleanGameUrl();
             var fullLink = (tNum === "solo")
                 ? (baseUrl + "?room=" + liveRoomCode + "&mode=individual")
                 : (baseUrl + "?room=" + liveRoomCode + "&team=" + tNum);
-            if (navigator.clipboard && navigator.clipboard.writeText) {
-                navigator.clipboard.writeText(fullLink);
-            } else {
-                prompt("Copy Join Link:", fullLink);
-            }
             var toast = document.getElementById("copy-link-toast");
-            toast.textContent = (tNum === "solo")
-                ? "✅ Copied Student Join Link! Paste it into Zoom Chat."
-                : ("✅ Copied Team " + tNum + " Link! Paste it into Zoom Chat.");
-            setTimeout(function() { toast.textContent = ""; }, 3000);
+            var labelText = (tNum === "solo")
+                ? "✅ Copied Student Join Link!"
+                : ("✅ Copied Team " + tNum + " Link!");
+            copyTextSafely(fullLink, toast, labelText);
         } else if (action === "host-launch-live-match") {
             hostStartLiveMatchFromLobby();
         } else if (action === "save-firebase-config") {
@@ -2823,6 +2880,10 @@
                 alert("Admin PIN cannot be empty!");
                 return;
             }
+            var publicUrlVal = document.getElementById("set-public-game-url").value.trim();
+            if (publicUrlVal) {
+                localStorage.setItem("tajweed_public_game_url", publicUrlVal);
+            }
             adminPassword = newPin;
             localStorage.setItem("tajweed_admin_pass", newPin);
             localStorage.setItem("tajweed_easy_time", document.getElementById("set-easy-time").value);
@@ -2830,7 +2891,7 @@
             localStorage.setItem("tajweed_exp_time", document.getElementById("set-exp-time").value);
             localStorage.setItem("tajweed_q_count", document.getElementById("set-q-count").value);
             updateMenuSubtitle();
-            showAdminAlert("Match & security settings saved successfully!");
+            showAdminAlert("Match, URL & security settings saved successfully!");
         } else if (action === "add-question") {
             addNewQuestionToStorage();
         } else if (action === "delete-custom-q") {
