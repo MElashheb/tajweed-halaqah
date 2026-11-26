@@ -12,6 +12,7 @@
     <!-- Firebase App, Realtime Database & Analytics Compat SDKs -->
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-analytics-compat.js"></script>
 
     <!-- Lightweight QR Code Generator -->
@@ -36,7 +37,7 @@
         .modal-box { display: none; background: #f8fafc; border: 2px solid #2d6a4f; padding: 20px; border-radius: 10px; margin-bottom: 18px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); text-align: left; }
         #password-modal { text-align: center; }
         .modal-box h3 { color: #1b4332; margin-top: 0; margin-bottom: 12px; font-size: 1.1em; }
-        #admin-pass-input { width: 80%; max-width: 300px; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 1em; margin-bottom: 12px; display: block; margin-left: auto; margin-right: auto; text-align: center; font-family: inherit; }
+        #admin-email-input, #admin-pass-input { width: 80%; max-width: 320px; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 1em; margin-bottom: 10px; display: block; margin-left: auto; margin-right: auto; text-align: center; font-family: inherit; }
         #pass-error-msg { color: #dc3545; font-size: 0.9em; font-weight: bold; margin-bottom: 10px; display: none; }
 
         /* Interactive Tajweed Lab */
@@ -235,14 +236,17 @@
         </div>
     </div>
 
-    <!-- Password Modal -->
+    <!-- Firebase Admin Authentication Modal -->
     <div id="password-modal" class="modal-box">
-        <h3>🔒 Enter Administrator / أدخل كلمة مرور المشرف</h3>
-        <input type="password" id="admin-pass-input" placeholder="Secret password...">
-        <div id="pass-error-msg">⚠️ Incorrect password / كلمة المرور غير صحيحة</div>
-        <div>
-            <button type="button" class="action-btn" data-action="submit-password" style="width:auto; padding:8px 24px; margin-top:0;">Login / دخول</button>
-            <button type="button" class="nav-btn" data-action="cancel-password" style="padding:9px 20px; margin-left:6px;">Cancel / إلغاء</button>
+        <h3>🔒 Teacher / Admin Sign-In / تسجيل دخول المشرف</h3>
+        <p style="font-size:0.86em; color:#475569; margin:0 0 12px 0;">Sign in with your Firebase Teacher Email & Password (or Google Account):</p>
+        <input type="email" id="admin-email-input" placeholder="Teacher Email (e.g., teacher@domain.com)">
+        <input type="password" id="admin-pass-input" placeholder="Firebase Password...">
+        <div id="pass-error-msg">⚠️ Invalid email or password / البريد أو كلمة المرور غير صحيحة</div>
+        <div style="display:flex; justify-content:center; gap:8px; flex-wrap:wrap; margin-top:6px;">
+            <button type="button" class="action-btn" id="btn-admin-login-submit" data-action="submit-password" style="width:auto; padding:8px 22px; margin-top:0;">Sign In / دخول</button>
+            <button type="button" class="nav-btn" data-action="google-signin-admin" style="background:#fff; border:1px solid #cbd5e1; color:#1e293b; padding:8px 16px;">🔵 Sign in with Google</button>
+            <button type="button" class="nav-btn" data-action="cancel-password" style="padding:8px 18px;">Cancel / إلغاء</button>
         </div>
     </div>
 
@@ -669,8 +673,11 @@
                     </select>
                 </div>
                 <div class="form-group">
-                    <label class="admin-card-label" for="set-admin-pass">Admin PIN / كلمة مرور المشرف:</label>
-                    <input type="text" id="set-admin-pass" value="1234" placeholder="Enter new PIN...">
+                    <label class="admin-card-label">Firebase Authenticated Teacher / حساب المشرف:</label>
+                    <div style="display:flex; gap:8px; align-items:center; background:#fff; border:1px solid #cbd5e1; padding:8px 10px; border-radius:6px;">
+                        <span id="admin-logged-in-user" style="font-size:0.86em; font-weight:bold; color:#166534; flex:1; overflow:hidden; text-overflow:ellipsis;">Signed in</span>
+                        <button type="button" class="btn-danger-sm" data-action="admin-sign-out">Sign Out / خروج</button>
+                    </div>
                 </div>
             </div>
             <button type="button" class="action-btn btn-warning" data-action="save-settings" style="margin-top:5px;">Save All Settings / حفظ الإعدادات</button>
@@ -867,6 +874,7 @@
     };
 
     var firebaseDb = null;
+    var firebaseAuth = null;
     var firebaseAnalytics = null;
     var isFirebaseReady = false;
     var cloudCustomQuestions = { easy: [], advanced: [], expert: [] };
@@ -881,6 +889,15 @@
                 firebase.initializeApp(cfg);
             }
             firebaseDb = firebase.database();
+            if (typeof firebase.auth === "function") {
+                firebaseAuth = firebase.auth();
+                firebaseAuth.onAuthStateChanged(function(user) {
+                    var userLabel = document.getElementById("admin-logged-in-user");
+                    if (userLabel) {
+                        userLabel.textContent = user ? ("✅ " + (user.email || user.displayName || "Authenticated")) : "Not signed in";
+                    }
+                });
+            }
             if (typeof firebase.analytics === "function" && cfg.measurementId) {
                 try { firebaseAnalytics = firebase.analytics(); } catch (aErr) {}
             }
@@ -978,7 +995,7 @@
         } catch (e) {}
     }
 
-    var adminPassword = localStorage.getItem("tajweed_admin_pass") || "1234";
+    localStorage.removeItem("tajweed_admin_pass");
     var APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxU5whfGB2N5VeNsyJEhM1Ax_IhdDODHGLCkF6-urtpXk4BK5qaBbIUBqbsdQtC2my9xQ/exec";
     var isCssFullscreenActive = false;
     var isMuted = false;
@@ -2450,7 +2467,6 @@
     if(localStorage.getItem("tajweed_exp_time")) document.getElementById("set-exp-time").value = localStorage.getItem("tajweed_exp_time");
     if(localStorage.getItem("tajweed_q_count")) document.getElementById("set-q-count").value = localStorage.getItem("tajweed_q_count");
     document.getElementById("set-public-game-url").value = getCleanGameUrl();
-    document.getElementById("set-admin-pass").value = adminPassword;
 
     function updateMenuSubtitle() {
         var count = parseInt(localStorage.getItem("tajweed_q_count") || "10", 10);
@@ -3321,23 +3337,76 @@
         reader.readAsText(file);
     });
 
+    function openAdminDashboard(user) {
+        document.getElementById("password-modal").style.display = "none";
+        document.getElementById("admin-pass-input").value = "";
+        document.getElementById("pass-error-msg").style.display = "none";
+        clearInterval(timerInterval);
+        document.getElementById("game-view-container").style.display = "none";
+        document.getElementById("admin-panel").style.display = "block";
+        document.getElementById("btn-admin-view").classList.add("active");
+        document.getElementById("btn-game-view").classList.remove("active");
+        document.getElementById("set-public-game-url").value = getCleanGameUrl();
+        var userLabel = document.getElementById("admin-logged-in-user");
+        if (userLabel && user) {
+            userLabel.textContent = "✅ " + (user.email || user.displayName || "Authenticated");
+        }
+        updateFirebaseStatusBadges();
+        renderTopicSelectorForLevel();
+        renderCustomQuestionsList();
+    }
+
     function verifyPassword() {
+        var emailVal = document.getElementById("admin-email-input").value.trim();
         var passVal = document.getElementById("admin-pass-input").value;
         var errorMsg = document.getElementById("pass-error-msg");
-        if (passVal === adminPassword) {
-            document.getElementById("password-modal").style.display = "none";
-            document.getElementById("admin-pass-input").value = "";
-            errorMsg.style.display = "none";
-            clearInterval(timerInterval);
-            document.getElementById("game-view-container").style.display = "none";
-            document.getElementById("admin-panel").style.display = "block";
-            document.getElementById("btn-admin-view").classList.add("active");
-            document.getElementById("btn-game-view").classList.remove("active");
-            document.getElementById("set-public-game-url").value = getCleanGameUrl();
-            updateFirebaseStatusBadges();
-            renderTopicSelectorForLevel();
-            renderCustomQuestionsList();
-        } else { errorMsg.style.display = "block"; }
+        var submitBtn = document.getElementById("btn-admin-login-submit");
+
+        if (!firebaseAuth) {
+            errorMsg.textContent = "⚠️ Firebase Auth SDK not initialized.";
+            errorMsg.style.display = "block";
+            return;
+        }
+        if (!emailVal || !passVal) {
+            errorMsg.textContent = "⚠️ Please enter both email and password / أدخل البريد وكلمة المرور";
+            errorMsg.style.display = "block";
+            return;
+        }
+
+        errorMsg.style.display = "none";
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Signing in...";
+
+        firebaseAuth.signInWithEmailAndPassword(emailVal, passVal)
+            .then(function(userCredential) {
+                submitBtn.disabled = false;
+                submitBtn.textContent = "Sign In / دخول";
+                openAdminDashboard(userCredential.user);
+            })
+            .catch(function(err) {
+                submitBtn.disabled = false;
+                submitBtn.textContent = "Sign In / دخول";
+                errorMsg.textContent = "⚠️ " + (err.message || "Authentication failed");
+                errorMsg.style.display = "block";
+            });
+    }
+
+    function signInAdminWithGoogle() {
+        var errorMsg = document.getElementById("pass-error-msg");
+        if (!firebaseAuth) {
+            errorMsg.textContent = "⚠️ Firebase Auth SDK not initialized.";
+            errorMsg.style.display = "block";
+            return;
+        }
+        var provider = new firebase.auth.GoogleAuthProvider();
+        firebaseAuth.signInWithPopup(provider)
+            .then(function(result) {
+                openAdminDashboard(result.user);
+            })
+            .catch(function(err) {
+                errorMsg.textContent = "⚠️ " + (err.message || "Google sign-in failed");
+                errorMsg.style.display = "block";
+            });
     }
 
     document.addEventListener("click", function(e) {
@@ -3349,10 +3418,14 @@
             var view = target.getAttribute("data-view");
             if (view === "admin") {
                 if (document.getElementById("admin-panel").style.display === "block") return;
+                if (firebaseAuth && firebaseAuth.currentUser) {
+                    openAdminDashboard(firebaseAuth.currentUser);
+                    return;
+                }
                 document.getElementById("pass-error-msg").style.display = "none";
                 document.getElementById("admin-pass-input").value = "";
                 document.getElementById("password-modal").style.display = "block";
-                document.getElementById("admin-pass-input").focus();
+                document.getElementById("admin-email-input").focus();
             } else {
                 document.getElementById("password-modal").style.display = "none";
                 document.getElementById("admin-panel").style.display = "none";
@@ -3498,6 +3571,18 @@
             document.getElementById("rules-modal").style.display = "none";
         } else if (action === "submit-password") {
             verifyPassword();
+        } else if (action === "google-signin-admin") {
+            signInAdminWithGoogle();
+        } else if (action === "admin-sign-out") {
+            if (firebaseAuth) {
+                firebaseAuth.signOut().then(function() {
+                    document.getElementById("admin-panel").style.display = "none";
+                    document.getElementById("game-view-container").style.display = "block";
+                    document.getElementById("btn-game-view").classList.add("active");
+                    document.getElementById("btn-admin-view").classList.remove("active");
+                    returnToMenu();
+                });
+            }
         } else if (action === "cancel-password") {
             document.getElementById("password-modal").style.display = "none";
             document.getElementById("admin-pass-input").value = "";
@@ -3539,23 +3624,16 @@
         } else if (action === "export-match-report") {
             exportMatchSummaryReport();
         } else if (action === "save-settings") {
-            var newPin = document.getElementById("set-admin-pass").value.trim();
-            if (!newPin) {
-                alert("Admin PIN cannot be empty!");
-                return;
-            }
             var publicUrlVal = document.getElementById("set-public-game-url").value.trim();
             if (publicUrlVal) {
                 localStorage.setItem("tajweed_public_game_url", publicUrlVal);
             }
-            adminPassword = newPin;
-            localStorage.setItem("tajweed_admin_pass", newPin);
             localStorage.setItem("tajweed_easy_time", document.getElementById("set-easy-time").value);
             localStorage.setItem("tajweed_adv_time", document.getElementById("set-adv-time").value);
             localStorage.setItem("tajweed_exp_time", document.getElementById("set-exp-time").value);
             localStorage.setItem("tajweed_q_count", document.getElementById("set-q-count").value);
             updateMenuSubtitle();
-            showAdminAlert("Match, URL & security settings saved successfully!");
+            showAdminAlert("Match & URL settings saved successfully!");
         } else if (action === "add-question") {
             addNewQuestionToStorage();
         } else if (action === "delete-custom-q") {
