@@ -4670,1019 +4670,1216 @@
         var filteredList = combinedList.filter(function(q) {
             return enabledTopics.indexOf(q.topic) !== -1;
         });
-        if (filteredList.length === 0) filteredList = combinedList;
 
-        var targetCount = parseInt(localStorage.getItem("tajweed_q_count") || "10", 10);
-        if (targetCount > filteredList.length) targetCount = filteredList.length;
+        if (filteredList.length === 0) {
+            filteredList = combinedList.slice();
+        }
 
-        shuffleArray(filteredList);
-        var selectedPool = filteredList.slice(0, targetCount);
+        // Fisher-Yates shuffle
+        for (var i = filteredList.length - 1; i > 0; i--) {
+            var j = Math.floor(Math.random() * (i + 1));
+            var temp = filteredList[i];
+            filteredList[i] = filteredList[j];
+            filteredList[j] = temp;
+        }
 
-        activePath = selectedPool.map(function(q) {
-            var clonedOptions = q.options.map(function(opt, idx) {
-                return { opt: opt, isCorrect: idx === q.correct };
-            });
-            shuffleArray(clonedOptions);
-            
-            var newCorrectIndex = clonedOptions.findIndex(function(item) { return item.isCorrect; });
-            return {
-                topic: q.topic,
-                husaryCode: q.husaryCode || "",
-                husaryLabel: q.husaryLabel || "",
-                qEn: q.qEn,
-                qAr: q.qAr,
-                options: clonedOptions.map(function(item) { return item.opt; }),
-                correct: newCorrectIndex,
-                explanation: q.explanation
-            };
-        });
-
-        if (currentPathName === 'easy') timeLimit = parseInt(localStorage.getItem("tajweed_easy_time") || "20", 10);
-        else if (currentPathName === 'advanced') timeLimit = parseInt(localStorage.getItem("tajweed_adv_time") || "30", 10);
-        else timeLimit = parseInt(localStorage.getItem("tajweed_exp_time") || "40", 10);
+        var maxCount = parseInt(localStorage.getItem("tajweed_q_count") || "10", 10);
+        return filteredList.slice(0, Math.min(maxCount, filteredList.length));
     }
 
-    function renderLobbyQrCode(urlString) {
+    function generateRoomCode() {
+        return Math.floor(1000 + Math.random() * 9000).toString();
+    }
+
+    function renderLobbyQRCode(roomCode, mode) {
         var qrContainer = document.getElementById("lobby-qr-code");
+        if (!qrContainer) return;
         qrContainer.innerHTML = "";
+        var joinUrl = getCleanGameUrl() + "?room=" + roomCode + (mode === "individual" ? "&mode=solo" : "");
         if (typeof QRCode !== "undefined") {
             new QRCode(qrContainer, {
-                text: urlString,
+                text: joinUrl,
                 width: 128,
                 height: 128,
                 colorDark: "#1b4332",
                 colorLight: "#ffffff",
                 correctLevel: QRCode.CorrectLevel.M
             });
+        } else {
+            qrContainer.textContent = joinUrl;
         }
     }
 
-    function hostCreateLiveLobby() {
+    function createFirebaseLiveRoom() {
         if (!isFirebaseReady || !firebaseDb) {
-            alert("Firebase is not configured yet! Click 'Admin ⚙️' at the top right and paste your Firebase Config JSON first.");
+            alert("Firebase is not connected. Please configure Firebase in Admin ⚙️ first.");
             return;
         }
         cleanupFirebaseListeners();
-        buildQuestionPool();
-
-        liveRoomCode = Math.floor(1000 + Math.random() * 9000).toString();
-        liveRoomRef = firebaseDb.ref("rooms/" + liveRoomCode);
+        liveRoomCode = generateRoomCode();
         indivPlayersMap = {};
+        liveRoomRef = firebaseDb.ref("rooms/" + liveRoomCode);
 
-        var isIndiv = (selectedPlayMode === "individual");
-        document.getElementById("lobby-room-code").textContent = liveRoomCode;
-        document.getElementById("lobby-heading").textContent = isIndiv
-            ? "👤 Individual Student Room Lobby / غرفة الطلاب الفردية"
-            : "🌐 Live Zoom 2-Team Room Lobby / غرفة الفرق المباشرة";
-
-        document.getElementById("lobby-teams-grid").style.display = isIndiv ? "none" : "grid";
-        document.getElementById("lobby-indiv-box").style.display = isIndiv ? "block" : "none";
-        document.getElementById("btn-copy-t1").style.display = isIndiv ? "none" : "inline-block";
-        document.getElementById("btn-copy-t2").style.display = isIndiv ? "none" : "inline-block";
-        document.getElementById("btn-copy-indiv").style.display = isIndiv ? "inline-block" : "none";
-
-        var baseUrl = getCleanGameUrl();
-        var qrJoinUrl = isIndiv
-            ? (baseUrl + "?room=" + liveRoomCode + "&mode=individual")
-            : (baseUrl + "?room=" + liveRoomCode);
-        renderLobbyQrCode(qrJoinUrl);
-
-        if (!isIndiv) {
-            document.getElementById("lobby-t1-name").textContent = team1Name;
-            document.getElementById("lobby-t2-name").textContent = team2Name;
-            document.getElementById("lobby-t1-card").classList.remove("connected");
-            document.getElementById("lobby-t2-card").classList.remove("connected");
-            document.getElementById("lobby-t1-status").textContent = "⏳ Waiting for Captain to join...";
-            document.getElementById("lobby-t2-status").textContent = "⏳ Waiting for Captain to join...";
-        } else {
-            document.getElementById("lobby-indiv-count").textContent = "0";
-            document.getElementById("lobby-indiv-roster").innerHTML = "<span style='color:#64748b; font-size:0.9em;'>⏳ Waiting for students to scan QR or enter Room Code...</span>";
-        }
-
-        liveRoomRef.set({
+        var initialRoomData = {
+            code: liveRoomCode,
+            mode: selectedPlayMode,
+            level: currentPathName,
             status: "lobby",
-            roomMode: selectedPlayMode,
+            currentQuestionIndex: 0,
+            totalQuestions: activePath.length,
             team1Name: team1Name,
             team2Name: team2Name,
             score1: 0,
             score2: 0,
             streak1: 0,
             streak2: 0,
-            totalQuestions: activePath.length,
-            timeLimit: timeLimit,
-            players: { team1: false, team2: false },
-            students: {},
-            answers: {},
-            createdAt: firebase.database.ServerValue.TIMESTAMP
+            timeLeft: timeLimit,
+            team1Connected: false,
+            team2Connected: false,
+            createdAt: Date.now()
+        };
+
+        liveRoomRef.set(initialRoomData).then(function() {
+            document.getElementById("setup-container").style.display = "none";
+            document.getElementById("lobby-container").style.display = "block";
+            document.getElementById("lobby-room-code").textContent = liveRoomCode;
+            renderLobbyQRCode(liveRoomCode, selectedPlayMode);
+
+            if (selectedPlayMode === "individual") {
+                document.getElementById("lobby-heading").textContent = "👤 Individual Student Lobby / غرفة الطلاب الفردية";
+                document.getElementById("lobby-teams-grid").style.display = "none";
+                document.getElementById("lobby-indiv-box").style.display = "block";
+                document.getElementById("btn-copy-t1").style.display = "none";
+                document.getElementById("btn-copy-t2").style.display = "none";
+                document.getElementById("btn-copy-indiv").style.display = "inline-block";
+            } else {
+                document.getElementById("lobby-heading").textContent = "🌐 Live Zoom 2-Team Lobby / غرفة الفرق المباشرة";
+                document.getElementById("lobby-teams-grid").style.display = "grid";
+                document.getElementById("lobby-indiv-box").style.display = "none";
+                document.getElementById("lobby-t1-name").textContent = team1Name;
+                document.getElementById("lobby-t2-name").textContent = team2Name;
+                document.getElementById("lobby-t1-card").classList.remove("connected");
+                document.getElementById("lobby-t2-card").classList.remove("connected");
+                document.getElementById("lobby-t1-status").textContent = "⏳ Waiting for Captain to join...";
+                document.getElementById("lobby-t2-status").textContent = "⏳ Waiting for Captain to join...";
+                document.getElementById("btn-copy-t1").style.display = "inline-block";
+                document.getElementById("btn-copy-t2").style.display = "inline-block";
+                document.getElementById("btn-copy-indiv").style.display = "none";
+            }
+
+            attachHostRoomListeners();
+        }).catch(function(err) {
+            console.error("Failed to create room:", err);
+            alert("Could not create Firebase room: " + err.message);
         });
-
-        if (firebaseAnalytics) {
-            try { firebaseAnalytics.logEvent("create_live_room", { level: currentPathName, mode: selectedPlayMode }); } catch (e) {}
-        }
-
-        if (!isIndiv) {
-            liveRoomRef.child("players").on("value", function(snap) {
-                var p = snap.val() || {};
-                if (p.team1) {
-                    document.getElementById("lobby-t1-card").classList.add("connected");
-                    document.getElementById("lobby-t1-status").textContent = "✅ Team 1 Captain Connected!";
-                }
-                if (p.team2) {
-                    document.getElementById("lobby-t2-card").classList.add("connected");
-                    document.getElementById("lobby-t2-status").textContent = "✅ Team 2 Captain Connected!";
-                }
-            });
-        } else {
-            liveRoomRef.child("students").on("value", function(snap) {
-                var students = snap.val() || {};
-                indivPlayersMap = students;
-                var keys = Object.keys(students);
-                document.getElementById("lobby-indiv-count").textContent = keys.length;
-                document.getElementById("indiv-joined-count").textContent = keys.length;
-                var roster = document.getElementById("lobby-indiv-roster");
-                roster.innerHTML = "";
-                if (keys.length === 0) {
-                    roster.innerHTML = "<span style='color:#64748b; font-size:0.9em;'>⏳ Waiting for students to scan QR or enter Room Code...</span>";
-                    return;
-                }
-                keys.forEach(function(k) {
-                    var pill = document.createElement("span");
-                    pill.className = "student-pill";
-                    pill.textContent = "👤 " + students[k].name;
-                    roster.appendChild(pill);
-                });
-            });
-        }
-
-        document.getElementById("setup-container").style.display = "none";
-        document.getElementById("lobby-container").style.display = "block";
     }
 
-    function hostStartLiveMatchFromLobby() {
-        currentQuestion = 0; score1 = 0; score2 = 0; streak1 = 0; streak2 = 0; maxStreak1 = 0; maxStreak2 = 0;
-        matchHistory = [];
+    function attachHostRoomListeners() {
+        if (!liveRoomRef) return;
 
-        var isIndiv = (selectedPlayMode === "individual");
+        // Monitor 2-team captain connections
+        liveRoomRef.child("team1Connected").on("value", function(snap) {
+            if (snap.val()) {
+                document.getElementById("lobby-t1-card").classList.add("connected");
+                document.getElementById("lobby-t1-status").textContent = "✅ Captain Connected! / متصل الآن";
+            }
+        });
+
+        liveRoomRef.child("team2Connected").on("value", function(snap) {
+            if (snap.val()) {
+                document.getElementById("lobby-t2-card").classList.add("connected");
+                document.getElementById("lobby-t2-status").textContent = "✅ Captain Connected! / متصل الآن";
+            }
+        });
+
+        // Monitor Individual Students roster
+        liveRoomRef.child("students").on("value", function(snap) {
+            indivPlayersMap = snap.val() || {};
+            var ids = Object.keys(indivPlayersMap);
+            document.getElementById("lobby-indiv-count").textContent = ids.length;
+            document.getElementById("indiv-joined-count").textContent = ids.length;
+
+            var rosterEl = document.getElementById("lobby-indiv-roster");
+            if (rosterEl) {
+                rosterEl.innerHTML = "";
+                if (ids.length === 0) {
+                    rosterEl.innerHTML = '<span style="color:#64748b; font-size:0.9em;">⏳ Waiting for students to scan QR or enter Room Code...</span>';
+                } else {
+                    ids.forEach(function(id) {
+                        var pill = document.createElement("span");
+                        pill.className = "student-pill";
+                        pill.textContent = "👤 " + (indivPlayersMap[id].name || "Student");
+                        rosterEl.appendChild(pill);
+                    });
+                }
+            }
+        });
+
+        // Monitor Live Answers for current round
+        liveRoomRef.child("answers").on("value", function(snap) {
+            if (document.getElementById("quiz-container").style.display !== "block") return;
+            var allAnswers = snap.val() || {};
+            var roundAns = allAnswers[currentQuestion] || {};
+
+            if (selectedPlayMode === "live") {
+                var t1Ans = roundAns["team1"];
+                var t2Ans = roundAns["team2"];
+                document.getElementById("t1-live-status").innerHTML = t1Ans
+                    ? '<span class="locked-in-badge">✔ Locked</span>'
+                    : '<span class="waiting-badge">⏳</span>';
+                document.getElementById("t2-live-status").innerHTML = t2Ans
+                    ? '<span class="locked-in-badge">✔ Locked</span>'
+                    : '<span class="waiting-badge">⏳</span>';
+
+                if (t1Ans && t2Ans && !liveRoundResolved) {
+                    resolveLiveRound(roundAns);
+                }
+            } else if (selectedPlayMode === "individual") {
+                var studentIds = Object.keys(indivPlayersMap);
+                var answeredIds = Object.keys(roundAns);
+                document.getElementById("indiv-locked-count").textContent = answeredIds.length;
+                if (studentIds.length > 0 && answeredIds.length >= studentIds.length && !liveRoundResolved) {
+                    resolveLiveRound(roundAns);
+                }
+            }
+        });
+    }
+
+    // =========================================================================
+    // HOST QUIZ ENGINE (LOCAL + LIVE 2-TEAM + INDIVIDUAL MODES)
+    // =========================================================================
+    function startMatchFlow() {
+        team1Name = (document.getElementById("input-team1").value || "Team Al-Noor").trim();
+        team2Name = (document.getElementById("input-team2").value || "Team Al-Huda").trim();
+
+        if (currentPathName === "easy") {
+            timeLimit = parseInt(document.getElementById("set-easy-time").value || "20", 10);
+        } else if (currentPathName === "advanced") {
+            timeLimit = parseInt(document.getElementById("set-adv-time").value || "30", 10);
+        } else {
+            timeLimit = parseInt(document.getElementById("set-exp-time").value || "40", 10);
+        }
+
+        activePath = buildQuestionPool();
+        if (!activePath || activePath.length === 0) {
+            alert("No questions available for this level.");
+            return;
+        }
+
+        currentQuestion = 0;
+        score1 = 0;
+        score2 = 0;
+        streak1 = 0;
+        streak2 = 0;
+        maxStreak1 = 0;
+        maxStreak2 = 0;
+        activeTeam = 1;
+        isTransferPhase = false;
+        matchHistory = [];
+        lifelines = {
+            1: { fiftyFifty: true, extraTime: true },
+            2: { fiftyFifty: true, extraTime: true }
+        };
+
+        if (selectedPlayMode === "local") {
+            launchHostQuizScreen();
+        } else {
+            createFirebaseLiveRoom();
+        }
+    }
+
+    function launchHostQuizScreen() {
+        document.getElementById("setup-container").style.display = "none";
         document.getElementById("lobby-container").style.display = "none";
+        document.getElementById("summary-container").style.display = "none";
         document.getElementById("quiz-container").style.display = "block";
         document.getElementById("live-stats").style.display = "flex";
-        document.getElementById("lifeline-bar").style.display = "none";
         document.getElementById("timer-bar-container").style.display = "block";
 
-        document.getElementById("t1-box").style.display = isIndiv ? "none" : "block";
-        document.getElementById("t2-box").style.display = isIndiv ? "none" : "block";
-        document.getElementById("indiv-stats-box").style.display = isIndiv ? "block" : "none";
-
-        var roomPill = document.getElementById("host-room-pill");
-        roomPill.style.display = "inline-block";
-        roomPill.textContent = "Room: " + liveRoomCode;
-
-        if (!isIndiv) {
-            liveRoomRef.child("answers").on("value", function(snap) {
-                if (liveRoundResolved) return;
-                var ans = snap.val() || {};
-                var t1Badge = document.getElementById("t1-live-status");
-                var t2Badge = document.getElementById("t2-live-status");
-
-                if (ans.team1) {
-                    t1Badge.className = "locked-in-badge";
-                    t1Badge.textContent = "🔒 Locked";
-                } else {
-                    t1Badge.className = "waiting-badge";
-                    t1Badge.textContent = "⏳ Thinking";
-                }
-
-                if (ans.team2) {
-                    t2Badge.className = "locked-in-badge";
-                    t2Badge.textContent = "🔒 Locked";
-                } else {
-                    t2Badge.className = "waiting-badge";
-                    t2Badge.textContent = "⏳ Thinking";
-                }
-
-                if (ans.team1 && ans.team2) {
-                    evaluateLiveSimultaneousRound(ans.team1, ans.team2);
-                }
-            });
+        if (selectedPlayMode === "individual") {
+            document.getElementById("t1-box").style.display = "none";
+            document.getElementById("t2-box").style.display = "none";
+            document.getElementById("indiv-stats-box").style.display = "block";
+            document.getElementById("lifeline-bar").style.display = "none";
+            document.getElementById("host-room-pill").style.display = "inline-block";
+            document.getElementById("host-room-pill").textContent = "Room: " + liveRoomCode;
+            document.getElementById("host-indiv-podium").style.display = "block";
+        } else if (selectedPlayMode === "live") {
+            document.getElementById("t1-box").style.display = "block";
+            document.getElementById("t2-box").style.display = "block";
+            document.getElementById("indiv-stats-box").style.display = "none";
+            document.getElementById("lifeline-bar").style.display = "none";
+            document.getElementById("host-room-pill").style.display = "inline-block";
+            document.getElementById("host-room-pill").textContent = "Room: " + liveRoomCode;
+            document.getElementById("host-indiv-podium").style.display = "none";
         } else {
-            liveRoomRef.child("answers").on("value", function(snap) {
-                if (liveRoundResolved) return;
-                var ans = snap.val() || {};
-                var lockedCount = Object.keys(ans).length;
-                var totalStudents = Object.keys(indivPlayersMap).length;
-                document.getElementById("indiv-joined-count").textContent = totalStudents;
-                document.getElementById("indiv-locked-count").textContent = lockedCount;
-
-                if (totalStudents > 0 && lockedCount >= totalStudents) {
-                    evaluateIndividualRound(ans);
-                }
-            });
+            document.getElementById("t1-box").style.display = "block";
+            document.getElementById("t2-box").style.display = "block";
+            document.getElementById("indiv-stats-box").style.display = "none";
+            document.getElementById("lifeline-bar").style.display = "flex";
+            document.getElementById("host-room-pill").style.display = "none";
+            document.getElementById("host-indiv-podium").style.display = "none";
         }
 
-        loadQuestion();
+        document.getElementById("lbl-team1").textContent = team1Name;
+        document.getElementById("lbl-team2").textContent = team2Name;
+        updateScoreboardUI();
+        renderHostQuestion();
     }
 
-    function hostPushLiveQuestion(qData) {
-        if (!liveRoomRef) return;
-        liveRoundResolved = false;
+    function updateScoreboardUI() {
+        document.getElementById("score1").textContent = score1;
+        document.getElementById("score2").textContent = score2;
+        document.getElementById("streak1").textContent = streak1;
+        document.getElementById("streak2").textContent = streak2;
+
+        var t1Box = document.getElementById("t1-box");
+        var t2Box = document.getElementById("t2-box");
+        t1Box.classList.remove("active-turn");
+        t2Box.classList.remove("active-turn");
+
+        if (selectedPlayMode === "local") {
+            if (activeTeam === 1) t1Box.classList.add("active-turn");
+            else t2Box.classList.add("active-turn");
+
+            var ll = lifelines[activeTeam];
+            document.getElementById("btn-lifeline-5050").disabled = !ll.fiftyFifty || isTransferPhase;
+            document.getElementById("btn-lifeline-time").disabled = !ll.extraTime || isTransferPhase;
+        }
+    }
+
+    function renderHostQuestion() {
+        clearInterval(timerInterval);
         clearTimeout(autoAdvanceTimeout);
-        document.getElementById("host-indiv-podium").style.display = "none";
-        document.getElementById("indiv-locked-count").textContent = "0";
+        stopHusaryAudio();
+        liveRoundResolved = false;
+        isTransferPhase = false;
 
-        var isFinal = (currentQuestion === activePath.length - 1);
-        liveRoomRef.update({
-            status: "question",
-            qIndex: currentQuestion,
-            totalQuestions: activePath.length,
-            isFinal: isFinal,
-            timeLimit: timeLimit,
-            questionStartedAt: firebase.database.ServerValue.TIMESTAMP,
-            currentQuestion: {
-                topic: qData.topic,
-                husaryCode: qData.husaryCode || "",
-                husaryLabel: qData.husaryLabel || "",
-                qEn: qData.qEn,
-                qAr: qData.qAr,
-                options: qData.options
-            },
-            answers: null,
-            roundResult: null
+        var q = activePath[currentQuestion];
+        var isFinale = (currentQuestion === activePath.length - 1);
+
+        document.getElementById("topic").textContent = q.topic;
+        document.getElementById("double-pts-badge").style.display = isFinale ? "inline-block" : "none";
+        document.getElementById("q-en-text").textContent = q.qEn;
+        document.getElementById("q-ar-text").textContent = q.qAr;
+        document.getElementById("progress").textContent = "Question " + (currentQuestion + 1) + " of " + activePath.length;
+
+        var feedbackEl = document.getElementById("feedback");
+        feedbackEl.style.display = "none";
+        feedbackEl.className = "feedback";
+        document.getElementById("next-btn").style.display = "none";
+        document.getElementById("transfer-btn").style.display = "none";
+        document.getElementById("reveal-btn").style.display = "none";
+
+        // Husary Audio Card
+        var husaryCard = document.getElementById("host-husary-card");
+        if (q.husaryCode) {
+            currentHostHusaryCode = q.husaryCode;
+            husaryCard.classList.add("visible");
+            document.getElementById("host-husary-ref").textContent = q.husaryLabel || ("Ayah " + q.husaryCode);
+        } else {
+            currentHostHusaryCode = null;
+            husaryCard.classList.remove("visible");
+        }
+
+        // Turn banner
+        var bannerEl = document.getElementById("turn-banner");
+        if (selectedPlayMode === "local") {
+            var currentTeamLabel = (activeTeam === 1) ? team1Name : team2Name;
+            bannerEl.textContent = "🎯 Turn: " + currentTeamLabel + (isFinale ? " (⚡ 2x Finale!)" : "");
+        } else if (selectedPlayMode === "live") {
+            bannerEl.textContent = "🌐 Live Zoom Round — Both Teams Answering Simultaneously!";
+            document.getElementById("t1-live-status").innerHTML = '<span class="waiting-badge">⏳</span>';
+            document.getElementById("t2-live-status").innerHTML = '<span class="waiting-badge">⏳</span>';
+        } else {
+            bannerEl.textContent = "👤 Individual Student Round — Lock In Your Answers!";
+            document.getElementById("indiv-locked-count").textContent = "0";
+        }
+
+        // Render Options
+        var optionsContainer = document.getElementById("options");
+        optionsContainer.innerHTML = "";
+        q.options.forEach(function(opt, idx) {
+            var row = document.createElement("div");
+            row.className = "opt-row";
+
+            var btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "opt-btn";
+            btn.setAttribute("data-opt-index", idx);
+            if (selectedPlayMode !== "local") {
+                btn.disabled = true;
+            }
+            btn.innerHTML =
+                '<span class="opt-en">' + String.fromCharCode(65 + idx) + ". " + escapeHtml(opt.en) + '</span>' +
+                '<span class="opt-ar" dir="rtl">' + escapeHtml(opt.ar) + '</span>' +
+                '<div class="team-pick-badges" id="pick-badges-' + idx + '"></div>';
+
+            btn.addEventListener("click", function() {
+                if (selectedPlayMode === "local") {
+                    handleLocalOptionClick(idx);
+                }
+            });
+
+            var audioBtn = document.createElement("button");
+            audioBtn.type = "button";
+            audioBtn.className = "opt-audio-btn";
+            audioBtn.title = "Listen to Arabic option";
+            audioBtn.textContent = "🔊";
+            audioBtn.addEventListener("click", function() {
+                speakArabic(opt.ar);
+            });
+
+            row.appendChild(btn);
+            row.appendChild(audioBtn);
+            optionsContainer.appendChild(row);
         });
-    }
 
-    function evaluateLiveSimultaneousRound(ans1, ans2) {
-        if (liveRoundResolved) return;
-        liveRoundResolved = true;
-        clearInterval(timerInterval);
+        updateScoreboardUI();
+        startHostTimer();
 
-        var qData = activePath[currentQuestion];
-        var buttons = document.querySelectorAll(".opt-btn");
-        var isFinal = (currentQuestion === activePath.length - 1);
-
-        var t1Correct = ans1 && ans1.choice === qData.correct;
-        var t2Correct = ans2 && ans2.choice === qData.correct;
-
-        var t1Faster = false;
-        var t2Faster = false;
-        if (t1Correct && t2Correct) {
-            if (ans1.timestamp <= ans2.timestamp) t1Faster = true;
-            else t2Faster = true;
-        } else if (t1Correct) {
-            t1Faster = true;
-        } else if (t2Correct) {
-            t2Faster = true;
-        }
-
-        var pts1 = 0;
-        var pts2 = 0;
-
-        if (t1Correct) {
-            streak1++;
-            if (streak1 > maxStreak1) maxStreak1 = streak1;
-            pts1 = 1 + (t1Faster ? 1 : 0) + (streak1 >= 3 ? 1 : 0);
-            if (isFinal) pts1 *= 2;
-            score1 += pts1;
-            syncScoreToSheet(team1Name, score1);
-        } else {
-            streak1 = 0;
-        }
-
-        if (t2Correct) {
-            streak2++;
-            if (streak2 > maxStreak2) maxStreak2 = streak2;
-            pts2 = 1 + (t2Faster ? 1 : 0) + (streak2 >= 3 ? 1 : 0);
-            if (isFinal) pts2 *= 2;
-            score2 += pts2;
-            syncScoreToSheet(team2Name, score2);
-        } else {
-            streak2 = 0;
-        }
-
-        if (t1Correct || t2Correct) playSound('correct');
-        else playSound('wrong');
-
-        highlightCorrectAnswer(qData, buttons);
-        attachTeamPickBadges(buttons, ans1 ? ans1.choice : null, ans2 ? ans2.choice : null);
-
-        var summaryHeader = "";
-        if (t1Correct && t2Correct) {
-            var fastName = t1Faster ? team1Name : team2Name;
-            summaryHeader = "🎉 Both Teams Correct! ⚡ " + fastName + " locked in faster! (" + team1Name + " +" + pts1 + ", " + team2Name + " +" + pts2 + ")";
-        } else if (t1Correct) {
-            summaryHeader = "✅ " + team1Name + " Correct (+" + pts1 + " pts)! ❌ " + team2Name + " missed.";
-        } else if (t2Correct) {
-            summaryHeader = "✅ " + team2Name + " Correct (+" + pts2 + " pts)! ❌ " + team1Name + " missed.";
-        } else {
-            summaryHeader = "❌ Neither team answered correctly.";
-        }
-
-        recordMatchQuestion(qData, (t1Correct || t2Correct), team1Name + ": +" + pts1 + " | " + team2Name + ": +" + pts2);
-        setFeedbackMessage(document.getElementById("feedback"), (t1Correct || t2Correct), summaryHeader, null, qData.explanation);
-        updateScoresUI();
-
-        if (liveRoomRef) {
+        // Push active question to Firebase if in Live/Individual mode
+        if ((selectedPlayMode === "live" || selectedPlayMode === "individual") && liveRoomRef) {
             liveRoomRef.update({
-                status: "reveal",
-                score1: score1,
-                score2: score2,
-                streak1: streak1,
-                streak2: streak2,
-                roundResult: {
-                    correctIndex: qData.correct,
-                    t1Choice: ans1 ? ans1.choice : -1,
-                    t2Choice: ans2 ? ans2.choice : -1,
-                    pts1: pts1,
-                    pts2: pts2,
-                    summaryHeader: summaryHeader,
-                    explanation: qData.explanation
+                status: "active",
+                currentQuestionIndex: currentQuestion,
+                timeLeft: timeLimit,
+                currentQuestionData: {
+                    index: currentQuestion,
+                    total: activePath.length,
+                    topic: q.topic,
+                    qEn: q.qEn,
+                    qAr: q.qAr,
+                    options: q.options,
+                    husaryCode: q.husaryCode || null,
+                    husaryLabel: q.husaryLabel || null,
+                    isFinale: isFinale
                 }
             });
         }
-
-        triggerPostRoundAutoAdvance();
     }
 
-    function evaluateIndividualRound(answersMap) {
+    function startHostTimer() {
+        clearInterval(timerInterval);
+        timeLeft = timeLimit;
+        updateTimerUI();
+
+        timerInterval = setInterval(function() {
+            timeLeft--;
+            updateTimerUI();
+
+            if ((selectedPlayMode === "live" || selectedPlayMode === "individual") && liveRoomRef) {
+                liveRoomRef.child("timeLeft").set(Math.max(0, timeLeft));
+            }
+
+            if (timeLeft <= 5 && timeLeft > 0) {
+                playSound("tick");
+            }
+
+            if (timeLeft <= 0) {
+                clearInterval(timerInterval);
+                handleHostTimeout();
+            }
+        }, 1000);
+    }
+
+    function updateTimerUI() {
+        var display = document.getElementById("timer-display");
+        var bar = document.getElementById("timer-bar");
+        display.textContent = "⏱️ " + Math.max(0, timeLeft) + "s";
+        var pct = Math.max(0, Math.min(100, (timeLeft / timeLimit) * 100));
+        bar.style.width = pct + "%";
+
+        if (timeLeft <= 5) {
+            display.classList.add("timer-danger");
+            bar.style.background = "#dc3545";
+        } else {
+            display.classList.remove("timer-danger");
+            bar.style.background = "#2d6a4f";
+        }
+    }
+
+    function handleHostTimeout() {
+        playSound("wrong");
+        if (selectedPlayMode === "local") {
+            disableAllHostOptions();
+            var q = activePath[currentQuestion];
+            var feedbackEl = document.getElementById("feedback");
+            feedbackEl.style.display = "block";
+            feedbackEl.className = "feedback incorrect";
+
+            if (activeTeam === 1) streak1 = 0;
+            else streak2 = 0;
+            updateScoreboardUI();
+
+            if (!isTransferPhase) {
+                feedbackEl.innerHTML = "⏰ <strong>Time's up! / انتهى الوقت!</strong> You can transfer this question to the other team or reveal the answer.";
+                document.getElementById("transfer-btn").style.display = "inline-block";
+                document.getElementById("reveal-btn").style.display = "inline-block";
+            } else {
+                revealCorrectAnswerLocal(false, "⏰ Time's up on the transfer! / انتهى وقت التحويل!");
+            }
+        } else {
+            // Live or Individual mode: resolve round with whatever answers arrived
+            if (liveRoomRef && !liveRoundResolved) {
+                liveRoomRef.child("answers/" + currentQuestion).once("value", function(snap) {
+                    resolveLiveRound(snap.val() || {});
+                });
+            }
+        }
+    }
+
+    function handleLocalOptionClick(selectedIdx) {
+        clearInterval(timerInterval);
+        disableAllHostOptions();
+
+        var q = activePath[currentQuestion];
+        var isCorrect = (selectedIdx === q.correct);
+        var buttons = document.querySelectorAll("#options .opt-btn");
+        var isFinale = (currentQuestion === activePath.length - 1);
+
+        if (isCorrect) {
+            playSound("correct");
+            buttons[selectedIdx].style.background = "#d4edda";
+            buttons[selectedIdx].style.borderColor = "#28a745";
+
+            var basePts = 1;
+            var speedBonus = (timeLeft >= Math.ceil(timeLimit * 0.6)) ? 1 : 0;
+            var streakBonus = 0;
+
+            if (activeTeam === 1) {
+                streak1++;
+                if (streak1 > maxStreak1) maxStreak1 = streak1;
+                if (streak1 >= 3) streakBonus = 1;
+                var totalEarned1 = (basePts + speedBonus + streakBonus) * (isFinale ? 2 : 1);
+                score1 += totalEarned1;
+            } else {
+                streak2++;
+                if (streak2 > maxStreak2) maxStreak2 = streak2;
+                if (streak2 >= 3) streakBonus = 1;
+                var totalEarned2 = (basePts + speedBonus + streakBonus) * (isFinale ? 2 : 1);
+                score2 += totalEarned2;
+            }
+
+            updateScoreboardUI();
+            var teamLabel = (activeTeam === 1) ? team1Name : team2Name;
+            var bonusNotes = [];
+            if (speedBonus) bonusNotes.push("⚡ +1 Speed");
+            if (streakBonus) bonusNotes.push("🔥 +1 Streak");
+            if (isFinale) bonusNotes.push("2x Finale");
+
+            var feedbackEl = document.getElementById("feedback");
+            feedbackEl.style.display = "block";
+            feedbackEl.className = "feedback correct";
+            feedbackEl.innerHTML =
+                "✅ <strong>Correct, " + escapeHtml(teamLabel) + "!</strong> " +
+                (bonusNotes.length ? "(" + bonusNotes.join(" • ") + ") " : "") +
+                "<br>" + escapeHtml(q.explanation);
+
+            matchHistory.push({
+                qEn: q.qEn,
+                qAr: q.qAr,
+                correctAnswer: q.options[q.correct].en + " / " + q.options[q.correct].ar,
+                wasCorrect: true,
+                answeredBy: teamLabel
+            });
+
+            document.getElementById("next-btn").style.display = "inline-block";
+            activeTeam = (activeTeam === 1) ? 2 : 1;
+        } else {
+            playSound("wrong");
+            buttons[selectedIdx].style.background = "#f8d7da";
+            buttons[selectedIdx].style.borderColor = "#dc3545";
+
+            if (activeTeam === 1) streak1 = 0;
+            else streak2 = 0;
+            updateScoreboardUI();
+
+            var feedbackEl2 = document.getElementById("feedback");
+            feedbackEl2.style.display = "block";
+            feedbackEl2.className = "feedback incorrect";
+
+            if (!isTransferPhase) {
+                feedbackEl2.innerHTML = "❌ <strong>Incorrect! / إجابة غير صحيحة!</strong> Transfer to the opposing team for a steal, or reveal the answer.";
+                document.getElementById("transfer-btn").style.display = "inline-block";
+                document.getElementById("reveal-btn").style.display = "inline-block";
+            } else {
+                revealCorrectAnswerLocal(false, "❌ Neither team got it right! / لم يوفق أي فريق!");
+            }
+        }
+    }
+
+    function triggerTransferPhase() {
+        isTransferPhase = true;
+        activeTeam = (activeTeam === 1) ? 2 : 1;
+        updateScoreboardUI();
+
+        document.getElementById("transfer-btn").style.display = "none";
+        document.getElementById("reveal-btn").style.display = "none";
+        document.getElementById("feedback").style.display = "none";
+
+        var targetTeamName = (activeTeam === 1) ? team1Name : team2Name;
+        document.getElementById("turn-banner").textContent = "🔄 STEAL ATTEMPT: " + targetTeamName + "'s Turn!";
+
+        var buttons = document.querySelectorAll("#options .opt-btn");
+        for (var i = 0; i < buttons.length; i++) {
+            if (!buttons[i].style.background || buttons[i].style.background === "") {
+                buttons[i].disabled = false;
+            }
+        }
+        startHostTimer();
+    }
+
+    function revealCorrectAnswerLocal(wasCorrect, prefixMsg) {
+        clearInterval(timerInterval);
+        disableAllHostOptions();
+        document.getElementById("transfer-btn").style.display = "none";
+        document.getElementById("reveal-btn").style.display = "none";
+
+        var q = activePath[currentQuestion];
+        var buttons = document.querySelectorAll("#options .opt-btn");
+        if (buttons[q.correct]) {
+            buttons[q.correct].style.background = "#d4edda";
+            buttons[q.correct].style.borderColor = "#28a745";
+        }
+
+        var feedbackEl = document.getElementById("feedback");
+        feedbackEl.style.display = "block";
+        feedbackEl.className = "feedback incorrect";
+        feedbackEl.innerHTML =
+            "<strong>" + (prefixMsg || "👁️ Answer Revealed:") + "</strong><br>" +
+            "Correct: <strong>" + escapeHtml(q.options[q.correct].en) + " (" + escapeHtml(q.options[q.correct].ar) + ")</strong><br>" +
+            escapeHtml(q.explanation);
+
+        matchHistory.push({
+            qEn: q.qEn,
+            qAr: q.qAr,
+            correctAnswer: q.options[q.correct].en + " / " + q.options[q.correct].ar,
+            wasCorrect: false,
+            answeredBy: "Missed"
+        });
+
+        document.getElementById("next-btn").style.display = "inline-block";
+        activeTeam = (activeTeam === 1) ? 2 : 1;
+    }
+
+    function disableAllHostOptions() {
+        var buttons = document.querySelectorAll("#options .opt-btn");
+        for (var i = 0; i < buttons.length; i++) {
+            buttons[i].disabled = true;
+        }
+    }
+
+    function resolveLiveRound(roundAns) {
         if (liveRoundResolved) return;
         liveRoundResolved = true;
         clearInterval(timerInterval);
 
-        var qData = activePath[currentQuestion];
-        var buttons = document.querySelectorAll(".opt-btn");
-        var isFinal = (currentQuestion === activePath.length - 1);
+        var q = activePath[currentQuestion];
+        var isFinale = (currentQuestion === activePath.length - 1);
+        var mult = isFinale ? 2 : 1;
+        var buttons = document.querySelectorAll("#options .opt-btn");
 
-        var correctList = [];
-        Object.keys(answersMap).forEach(function(sId) {
-            var entry = answersMap[sId];
-            if (entry && entry.choice === qData.correct) {
-                correctList.push({ sId: sId, timestamp: entry.timestamp || 9999999999999 });
+        if (buttons[q.correct]) {
+            buttons[q.correct].style.background = "#d4edda";
+            buttons[q.correct].style.borderColor = "#28a745";
+        }
+
+        var anyCorrect = false;
+
+        if (selectedPlayMode === "live") {
+            var a1 = roundAns["team1"];
+            var a2 = roundAns["team2"];
+
+            if (a1 && typeof a1.choice === "number") {
+                var b1 = document.getElementById("pick-badges-" + a1.choice);
+                if (b1) b1.innerHTML += '<span class="pick-pill-t1">' + escapeHtml(team1Name) + '</span>';
             }
-        });
-        correctList.sort(function(a, b) { return a.timestamp - b.timestamp; });
-        var fastestId = correctList.length > 0 ? correctList[0].sId : null;
+            if (a2 && typeof a2.choice === "number") {
+                var b2 = document.getElementById("pick-badges-" + a2.choice);
+                if (b2) b2.innerHTML += '<span class="pick-pill-t2">' + escapeHtml(team2Name) + '</span>';
+            }
 
-        var roundAwards = {};
-        Object.keys(indivPlayersMap).forEach(function(sId) {
-            var st = indivPlayersMap[sId];
-            var ans = answersMap[sId];
-            if (ans && ans.choice === qData.correct) {
-                st.streak = (st.streak || 0) + 1;
-                if (st.streak > (st.maxStreak || 0)) st.maxStreak = st.streak;
-                var pts = 1 + (sId === fastestId ? 1 : 0) + (st.streak >= 3 ? 1 : 0);
-                if (isFinal) pts *= 2;
-                st.score = (st.score || 0) + pts;
-                roundAwards[sId] = pts;
+            var t1Right = a1 && a1.choice === q.correct;
+            var t2Right = a2 && a2.choice === q.correct;
+
+            if (t1Right) {
+                anyCorrect = true;
+                streak1++;
+                if (streak1 > maxStreak1) maxStreak1 = streak1;
+                var speed1 = (!t2Right || (a1.timestamp || 0) <= (a2.timestamp || 0)) ? 1 : 0;
+                var st1 = (streak1 >= 3) ? 1 : 0;
+                score1 += (1 + speed1 + st1) * mult;
             } else {
-                st.streak = 0;
-                roundAwards[sId] = 0;
+                streak1 = 0;
             }
+
+            if (t2Right) {
+                anyCorrect = true;
+                streak2++;
+                if (streak2 > maxStreak2) maxStreak2 = streak2;
+                var speed2 = (!t1Right || (a2.timestamp || 0) < (a1.timestamp || 0)) ? 1 : 0;
+                var st2 = (streak2 >= 3) ? 1 : 0;
+                score2 += (1 + speed2 + st2) * mult;
+            } else {
+                streak2 = 0;
+            }
+
+            updateScoreboardUI();
+            if (liveRoomRef) {
+                liveRoomRef.update({
+                    status: "revealed",
+                    correctIndex: q.correct,
+                    explanation: q.explanation,
+                    score1: score1,
+                    score2: score2
+                });
+            }
+        } else if (selectedPlayMode === "individual") {
+            var updates = {
+                status: "revealed",
+                correctIndex: q.correct,
+                explanation: q.explanation
+            };
+
+            // Sort correct respondents by timestamp to award +1 speed bonus to fastest
+            var correctEntries = [];
+            Object.keys(roundAns).forEach(function(sid) {
+                var ans = roundAns[sid];
+                if (ans && typeof ans.choice === "number") {
+                    var badgeBox = document.getElementById("pick-badges-" + ans.choice);
+                    if (badgeBox) {
+                        badgeBox.innerHTML += '<span class="pick-pill-indiv">' + escapeHtml(ans.name || "Student") + '</span>';
+                    }
+                    if (ans.choice === q.correct) {
+                        anyCorrect = true;
+                        correctEntries.push({ sid: sid, ts: ans.timestamp || 0 });
+                    }
+                }
+            });
+
+            correctEntries.sort(function(a, b) { return a.ts - b.ts; });
+            correctEntries.forEach(function(entry, rankIdx) {
+                var prevScore = (indivPlayersMap[entry.sid] && indivPlayersMap[entry.sid].score) || 0;
+                var earned = (1 + (rankIdx === 0 ? 1 : 0)) * mult;
+                var newScore = prevScore + earned;
+                if (indivPlayersMap[entry.sid]) indivPlayersMap[entry.sid].score = newScore;
+                updates["students/" + entry.sid + "/score"] = newScore;
+            });
+
+            if (liveRoomRef) {
+                liveRoomRef.update(updates);
+            }
+            renderLiveIndividualPodium();
+        }
+
+        playSound(anyCorrect ? "correct" : "wrong");
+
+        var feedbackEl = document.getElementById("feedback");
+        feedbackEl.style.display = "block";
+        feedbackEl.className = anyCorrect ? "feedback correct" : "feedback incorrect";
+        feedbackEl.innerHTML =
+            "<strong>" + (anyCorrect ? "✅ Round Complete!" : "⏱️ Round Complete!") + "</strong> " +
+            "Answer: <strong>" + escapeHtml(q.options[q.correct].en) + " (" + escapeHtml(q.options[q.correct].ar) + ")</strong><br>" +
+            escapeHtml(q.explanation);
+
+        matchHistory.push({
+            qEn: q.qEn,
+            qAr: q.qAr,
+            correctAnswer: q.options[q.correct].en + " / " + q.options[q.correct].ar,
+            wasCorrect: anyCorrect,
+            answeredBy: anyCorrect ? "Answered Correctly" : "Missed"
         });
 
-        if (correctList.length > 0) playSound('correct');
-        else playSound('wrong');
+        document.getElementById("next-btn").style.display = "inline-block";
 
-        highlightCorrectAnswer(qData, buttons);
+        if (document.getElementById("chk-auto-advance").checked) {
+            autoAdvanceTimeout = setTimeout(function() {
+                advanceToNextQuestion();
+            }, 5000);
+        }
+    }
 
-        var fastestName = (fastestId && indivPlayersMap[fastestId]) ? indivPlayersMap[fastestId].name : "";
-        var summaryHeader = correctList.length > 0
-            ? ("🎉 " + correctList.length + " student(s) answered correctly!" + (fastestName ? (" ⚡ Fastest: " + fastestName) : ""))
-            : "❌ No student answered correctly this round.";
+    function renderLiveIndividualPodium() {
+        var listEl = document.getElementById("host-indiv-podium-list");
+        if (!listEl) return;
+        var sorted = Object.keys(indivPlayersMap).map(function(id) {
+            return { name: indivPlayersMap[id].name || "Student", score: indivPlayersMap[id].score || 0 };
+        }).sort(function(a, b) { return b.score - a.score; });
 
-        recordMatchQuestion(qData, correctList.length > 0, correctList.length + " students solved");
-        setFeedbackMessage(document.getElementById("feedback"), correctList.length > 0, summaryHeader, null, qData.explanation);
-
-        var ranked = Object.keys(indivPlayersMap).map(function(id) {
-            return indivPlayersMap[id];
-        }).sort(function(a, b) { return (b.score || 0) - (a.score || 0); });
-
-        var podiumBox = document.getElementById("host-indiv-podium");
-        var podiumList = document.getElementById("host-indiv-podium-list");
-        podiumList.innerHTML = "";
-        ranked.slice(0, 5).forEach(function(st, idx) {
+        listEl.innerHTML = "";
+        sorted.slice(0, 5).forEach(function(st, i) {
             var row = document.createElement("div");
             row.className = "indiv-podium-row";
-            row.innerHTML = "<span><strong>#" + (idx + 1) + "</strong> " + st.name + " (🔥 " + (st.streak || 0) + ")</span><strong>" + (st.score || 0) + " pts</strong>";
-            podiumList.appendChild(row);
+            row.innerHTML = "<span>#" + (i + 1) + " <strong>" + escapeHtml(st.name) + "</strong></span><span>" + st.score + " pts</span>";
+            listEl.appendChild(row);
         });
-        podiumBox.style.display = ranked.length > 0 ? "block" : "none";
+    }
+
+    function advanceToNextQuestion() {
+        clearTimeout(autoAdvanceTimeout);
+        currentQuestion++;
+        if (currentQuestion < activePath.length) {
+            renderHostQuestion();
+        } else {
+            finishMatch();
+        }
+    }
+
+    function finishMatch() {
+        clearInterval(timerInterval);
+        clearTimeout(autoAdvanceTimeout);
+        stopHusaryAudio();
+
+        document.getElementById("quiz-container").style.display = "none";
+        document.getElementById("live-stats").style.display = "none";
+        document.getElementById("timer-bar-container").style.display = "none";
+        document.getElementById("lifeline-bar").style.display = "none";
+        document.getElementById("summary-container").style.display = "block";
+
+        var winnerEl = document.getElementById("winner-announcement");
+        var detailsEl = document.getElementById("final-details");
+        var metaEl = document.getElementById("match-meta-details");
+        var indivBox = document.getElementById("indiv-final-standings-box");
+
+        if (selectedPlayMode === "individual") {
+            indivBox.style.display = "block";
+            var sorted = Object.keys(indivPlayersMap).map(function(id) {
+                return { name: indivPlayersMap[id].name || "Student", score: indivPlayersMap[id].score || 0 };
+            }).sort(function(a, b) { return b.score - a.score; });
+
+            if (sorted.length > 0) {
+                winnerEl.textContent = "🏆 Champion: " + sorted[0].name + " (" + sorted[0].score + " pts)";
+                detailsEl.textContent = "Total Participants: " + sorted.length + " students";
+                syncScoreToSheet(sorted[0].name, sorted[0].score);
+            } else {
+                winnerEl.textContent = "🏆 Challenge Complete!";
+                detailsEl.textContent = "No individual participants recorded.";
+            }
+
+            var finalListEl = document.getElementById("indiv-final-list");
+            finalListEl.innerHTML = "";
+            sorted.forEach(function(st, idx) {
+                var r = document.createElement("div");
+                r.className = "indiv-podium-row";
+                r.innerHTML = "<span>#" + (idx + 1) + " <strong>" + escapeHtml(st.name) + "</strong></span><span><strong>" + st.score + " pts</strong></span>";
+                finalListEl.appendChild(r);
+            });
+        } else {
+            indivBox.style.display = "none";
+            if (score1 > score2) {
+                winnerEl.textContent = "🏆 Winner: " + team1Name + "!";
+            } else if (score2 > score1) {
+                winnerEl.textContent = "🏆 Winner: " + team2Name + "!";
+            } else {
+                winnerEl.textContent = "🤝 It's a Tie! / تعادل!";
+            }
+            detailsEl.textContent = team1Name + ": " + score1 + " pts  |  " + team2Name + ": " + score2 + " pts";
+            metaEl.textContent = "Best Streaks — " + team1Name + ": 🔥 " + maxStreak1 + "  |  " + team2Name + ": 🔥 " + maxStreak2;
+
+            syncScoreToSheet(team1Name, score1);
+            syncScoreToSheet(team2Name, score2);
+        }
 
         if (liveRoomRef) {
-            liveRoomRef.update({
-                status: "reveal",
-                students: indivPlayersMap,
-                roundResult: {
-                    correctIndex: qData.correct,
-                    summaryHeader: summaryHeader,
-                    explanation: qData.explanation,
-                    awards: roundAwards
-                }
-            });
+            liveRoomRef.update({ status: "finished", score1: score1, score2: score2 });
         }
 
-        triggerPostRoundAutoAdvance();
+        renderMatchReview();
+        fetchLiveLeaderboard();
     }
 
-    function triggerPostRoundAutoAdvance() {
-        showNextButton();
-        if (document.getElementById("chk-auto-advance").checked) {
-            var nextBtn = document.getElementById("next-btn");
-            var autoSec = 5;
-            nextBtn.textContent = "Next in " + autoSec + "s... (or Click Now) →";
-            autoAdvanceTimeout = setInterval(function() {
-                autoSec--;
-                if (autoSec > 0) {
-                    nextBtn.textContent = "Next in " + autoSec + "s... (or Click Now) →";
-                } else {
-                    clearInterval(autoAdvanceTimeout);
-                    nextQuestion();
-                }
-            }, 1000);
-        }
-    }
-
-    function attachTeamPickBadges(buttons, t1Choice, t2Choice) {
-        for (var i = 0; i < buttons.length; i++) {
-            var badgesDiv = document.createElement("div");
-            badgesDiv.className = "team-pick-badges";
-            var hasBadge = false;
-            if (t1Choice === i) {
-                var p1 = document.createElement("span");
-                p1.className = "pick-pill-t1";
-                p1.textContent = "👤 " + team1Name;
-                badgesDiv.appendChild(p1);
-                hasBadge = true;
-            }
-            if (t2Choice === i) {
-                var p2 = document.createElement("span");
-                p2.className = "pick-pill-t2";
-                p2.textContent = "👤 " + team2Name;
-                badgesDiv.appendChild(p2);
-                hasBadge = true;
-            }
-            if (hasBadge) buttons[i].appendChild(badgesDiv);
-        }
+    function renderMatchReview() {
+        var listEl = document.getElementById("match-review-list");
+        listEl.innerHTML = "";
+        matchHistory.forEach(function(item, idx) {
+            var div = document.createElement("div");
+            div.className = "review-item";
+            div.innerHTML =
+                '<div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">' +
+                '<strong>Q' + (idx + 1) + ': ' + escapeHtml(item.qEn) + '</strong>' +
+                '<span class="' + (item.wasCorrect ? "badge-correct" : "badge-missed") + '">' +
+                (item.wasCorrect ? "✔ " + escapeHtml(item.answeredBy) : "✖ Missed") +
+                '</span></div>' +
+                '<div dir="rtl" style="color:#0f766e; font-family:Amiri, serif; font-size:1.15em; margin:4px 0;">' + escapeHtml(item.qAr) + '</div>' +
+                '<div style="font-size:0.88em; color:#334155;">Answer: <strong>' + escapeHtml(item.correctAnswer) + '</strong></div>';
+            listEl.appendChild(div);
+        });
     }
 
     // =========================================================================
-    // PLAYER CLIENT VIEW (2-Team Captain OR Individual Student)
+    // PLAYER / STUDENT CLIENT VIEW LOGIC
     // =========================================================================
     function openPlayerJoinView(prefillRoom, prefillTeam, prefillMode) {
-        clearInterval(timerInterval);
         cleanupFirebaseListeners();
-        document.getElementById("admin-panel").style.display = "none";
-        document.getElementById("game-view-container").style.display = "block";
         document.getElementById("menu-container").style.display = "none";
         document.getElementById("setup-container").style.display = "none";
         document.getElementById("lobby-container").style.display = "none";
         document.getElementById("quiz-container").style.display = "none";
         document.getElementById("summary-container").style.display = "none";
-        document.getElementById("live-stats").style.display = "none";
-        document.getElementById("lifeline-bar").style.display = "none";
-        document.getElementById("timer-bar-container").style.display = "none";
         document.getElementById("player-game-container").style.display = "none";
         document.getElementById("player-join-container").style.display = "block";
 
-        if (prefillRoom) document.getElementById("join-room-code-input").value = prefillRoom;
-        if (prefillTeam) document.getElementById("join-team-select").value = prefillTeam;
-
-        if (prefillMode === "individual") {
-            document.getElementById("join-team-group").style.display = "none";
-            document.getElementById("join-student-name-group").style.display = "block";
-        } else if (prefillTeam) {
-            document.getElementById("join-team-group").style.display = "block";
-            document.getElementById("join-student-name-group").style.display = "none";
-        } else {
-            document.getElementById("join-team-group").style.display = "block";
-            document.getElementById("join-student-name-group").style.display = "block";
+        if (prefillRoom) {
+            document.getElementById("join-room-code-input").value = prefillRoom;
+        }
+        if (prefillTeam === "1" || prefillTeam === "2") {
+            document.getElementById("join-team-select").value = prefillTeam;
+        }
+        if (prefillMode === "solo") {
+            document.getElementById("join-student-name-input").focus();
         }
     }
 
     function connectPlayerToRoom() {
         if (!isFirebaseReady || !firebaseDb) {
-            alert("Firebase is not configured on this link yet. Please ask your teacher to configure Firebase in Admin ⚙️ first.");
+            alert("Firebase is not connected on this device.");
             return;
         }
-        var code = document.getElementById("join-room-code-input").value.trim();
-        var teamNum = parseInt(document.getElementById("join-team-select").value, 10);
-        var enteredName = document.getElementById("join-student-name-input").value.trim();
-
+        var code = (document.getElementById("join-room-code-input").value || "").trim();
         if (code.length !== 4) {
-            alert("Please enter the 4-digit Room Code! / أدخل رمز الغرفة المكون من 4 أرقام");
+            alert("Please enter the 4-digit Room Code.");
             return;
         }
 
-        cleanupFirebaseListeners();
-        playerRoomCode = code;
-        playerCurrentQIndex = -1;
-        playerRoomRef = firebaseDb.ref("rooms/" + code);
-
-        playerRoomRef.once("value", function(snap) {
-            if (!snap.exists()) {
+        var roomRef = firebaseDb.ref("rooms/" + code);
+        roomRef.once("value").then(function(snap) {
+            var room = snap.val();
+            if (!room) {
                 alert("Room " + code + " not found! Check the code with your teacher.");
                 return;
             }
-            var roomVal = snap.val();
-            if (roomVal.roomMode === "individual") {
-                if (!enteredName) {
-                    alert("This is an Individual Student Room. Please enter your name! / أدخل اسمك للمتابعة");
-                    document.getElementById("join-team-group").style.display = "none";
-                    document.getElementById("join-student-name-group").style.display = "block";
-                    document.getElementById("join-student-name-input").focus();
+
+            playerRoomCode = code;
+            playerRoomRef = roomRef;
+            playerCurrentQIndex = -1;
+            playerHasAnsweredCurrent = false;
+
+            if (room.mode === "individual") {
+                var sName = (document.getElementById("join-student-name-input").value || "").trim();
+                if (!sName) {
+                    alert("Please enter your name for Individual Student Mode.");
                     return;
                 }
                 playerRole = "individual";
-                playerStudentName = enteredName;
-                playerStudentId = "stu_" + Math.random().toString(36).substr(2, 8);
-                playerRoomRef.child("students/" + playerStudentId).set({
+                playerStudentName = sName;
+                playerStudentId = "stu_" + Date.now() + "_" + Math.floor(Math.random() * 1000);
+                roomRef.child("students/" + playerStudentId).set({
                     name: playerStudentName,
                     score: 0,
-                    streak: 0,
-                    maxStreak: 0
+                    joinedAt: Date.now()
                 });
+                document.getElementById("player-team-badge").textContent = "Room " + code + " • 👤 " + playerStudentName;
             } else {
                 playerRole = "team";
-                playerTeamNumber = teamNum;
-                playerRoomRef.child("players/team" + teamNum).set(true);
+                playerTeamNumber = parseInt(document.getElementById("join-team-select").value || "1", 10);
+                var tLabel = (playerTeamNumber === 1) ? (room.team1Name || "Team 1") : (room.team2Name || "Team 2");
+                roomRef.child(playerTeamNumber === 1 ? "team1Connected" : "team2Connected").set(true);
+                document.getElementById("player-team-badge").textContent = "Room " + code + " • " + tLabel;
             }
 
             document.getElementById("player-join-container").style.display = "none";
             document.getElementById("player-game-container").style.display = "block";
+            document.getElementById("player-waiting-box").style.display = "block";
+            document.getElementById("player-question-area").style.display = "none";
 
-            playerRoomRef.on("value", function(roomSnap) {
-                var room = roomSnap.val();
-                if (!room) return;
-                renderPlayerRoomState(room);
-            });
+            subscribeToPlayerRoomUpdates();
+        }).catch(function(err) {
+            alert("Error connecting to room: " + err.message);
         });
     }
 
-    function renderPlayerRoomState(room) {
-        var banner = document.getElementById("player-header-banner");
-        var displayIdentity = "";
-        var displayScore = "";
+    function subscribeToPlayerRoomUpdates() {
+        if (!playerRoomRef) return;
 
-        if (playerRole === "individual") {
-            banner.style.background = "#ede9fe";
-            banner.style.color = "#5b21b6";
-            var myObj = (room.students && room.students[playerStudentId]) ? room.students[playerStudentId] : { score: 0, streak: 0 };
-            displayIdentity = "Room " + playerRoomCode + " • 👤 " + playerStudentName;
-            displayScore = "Your Score: " + (myObj.score || 0) + " pts (🔥 " + (myObj.streak || 0) + ")";
+        playerRoomRef.on("value", function(snap) {
+            var room = snap.val();
+            if (!room) return;
+
+            document.getElementById("player-timer-badge").textContent = "⏱️ " + (room.timeLeft || 0) + "s";
+
+            // Update score badge
+            if (playerRole === "individual" && room.students && room.students[playerStudentId]) {
+                document.getElementById("player-score-badge").textContent = "Score: " + (room.students[playerStudentId].score || 0);
+            } else if (playerRole === "team") {
+                var sc = (playerTeamNumber === 1) ? (room.score1 || 0) : (room.score2 || 0);
+                document.getElementById("player-score-badge").textContent = "Score: " + sc;
+            }
+
+            if (room.status === "lobby") {
+                document.getElementById("player-waiting-box").style.display = "block";
+                document.getElementById("player-question-area").style.display = "none";
+                document.getElementById("player-waiting-msg").textContent = "Waiting for the teacher to start Question 1...";
+            } else if (room.status === "active" && room.currentQuestionData) {
+                var qData = room.currentQuestionData;
+                if (qData.index !== playerCurrentQIndex) {
+                    playerCurrentQIndex = qData.index;
+                    playerHasAnsweredCurrent = false;
+                    playerLatestQuestion = qData;
+                    renderPlayerQuestion(qData);
+                }
+            } else if (room.status === "revealed") {
+                revealPlayerRoundFeedback(room);
+            } else if (room.status === "finished") {
+                document.getElementById("player-question-area").style.display = "none";
+                document.getElementById("player-waiting-box").style.display = "block";
+                document.getElementById("player-waiting-msg").innerHTML =
+                    "🏆 <strong>Challenge Completed!</strong><br>Check the teacher's screen for the final podium and certificates.";
+            }
+        });
+    }
+
+    function renderPlayerQuestion(qData) {
+        document.getElementById("player-waiting-box").style.display = "none";
+        document.getElementById("player-question-area").style.display = "block";
+        document.getElementById("player-topic").textContent = qData.topic;
+        document.getElementById("player-double-badge").style.display = qData.isFinale ? "inline-block" : "none";
+        document.getElementById("player-q-en").textContent = qData.qEn;
+        document.getElementById("player-q-ar").textContent = qData.qAr;
+        document.getElementById("player-progress").textContent = "Question " + (qData.index + 1) + " of " + qData.total;
+
+        var fb = document.getElementById("player-feedback");
+        fb.style.display = "none";
+        fb.className = "feedback";
+
+        var hCard = document.getElementById("player-husary-card");
+        if (qData.husaryCode) {
+            currentPlayerHusaryCode = qData.husaryCode;
+            hCard.classList.add("visible");
+            document.getElementById("player-husary-ref").textContent = qData.husaryLabel || "Listen carefully";
         } else {
-            var myTeamName = (playerTeamNumber === 1) ? (room.team1Name || "Team 1") : (room.team2Name || "Team 2");
-            banner.style.background = (playerTeamNumber === 1) ? "#e0f2fe" : "#fce7f3";
-            banner.style.color = (playerTeamNumber === 1) ? "#0369a1" : "#be185d";
-            displayIdentity = "Room " + playerRoomCode + " • " + myTeamName;
-            displayScore = (room.team1Name || "T1") + ": " + (room.score1 || 0) + " | " + (room.team2Name || "T2") + ": " + (room.score2 || 0);
+            currentPlayerHusaryCode = null;
+            hCard.classList.remove("visible");
         }
 
-        document.getElementById("player-team-badge").textContent = displayIdentity;
-        document.getElementById("player-score-badge").textContent = displayScore;
+        var optsEl = document.getElementById("player-options");
+        optsEl.innerHTML = "";
+        (qData.options || []).forEach(function(opt, idx) {
+            var btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "opt-btn";
+            btn.innerHTML =
+                '<span class="opt-en">' + String.fromCharCode(65 + idx) + ". " + escapeHtml(opt.en) + '</span>' +
+                '<span class="opt-ar" dir="rtl">' + escapeHtml(opt.ar) + '</span>';
 
-        var waitBox = document.getElementById("player-waiting-box");
-        var qArea = document.getElementById("player-question-area");
-
-        if (room.status === "lobby") {
-            clearInterval(playerTimerInterval);
-            waitBox.style.display = "block";
-            qArea.style.display = "none";
-            document.getElementById("player-waiting-msg").innerHTML = "Connected as <strong>" + (playerRole === "individual" ? playerStudentName : ("Team " + playerTeamNumber)) + "</strong>!<br>Waiting for teacher to launch the match...";
-        } else if (room.status === "question" && room.currentQuestion) {
-            waitBox.style.display = "none";
-            qArea.style.display = "block";
-            playerLatestQuestion = room.currentQuestion;
-
-            var myAnswerKey = (playerRole === "individual") ? playerStudentId : ("team" + playerTeamNumber);
-            var myExistingAnswer = room.answers && room.answers[myAnswerKey];
-            playerHasAnsweredCurrent = Boolean(myExistingAnswer);
-
-            if (playerCurrentQIndex !== room.qIndex) {
-                playerCurrentQIndex = room.qIndex;
-                document.getElementById("player-topic").textContent = room.currentQuestion.topic;
-                document.getElementById("player-double-badge").style.display = room.isFinal ? "inline-block" : "none";
-                document.getElementById("player-q-en").textContent = (room.qIndex + 1) + ". " + room.currentQuestion.qEn;
-                document.getElementById("player-q-ar").textContent = room.currentQuestion.qAr;
-                document.getElementById("player-progress").textContent = "Question " + (room.qIndex + 1) + " of " + room.totalQuestions;
-                document.getElementById("player-feedback").style.display = "none";
-
-                var pHusaryCard = document.getElementById("player-husary-card");
-                if (room.currentQuestion.husaryCode) {
-                    currentPlayerHusaryCode = room.currentQuestion.husaryCode;
-                    document.getElementById("player-husary-ref").textContent = room.currentQuestion.husaryLabel || "Listen to Shaykh Al-Husary's recitation";
-                    pHusaryCard.classList.add("visible");
-                } else {
-                    currentPlayerHusaryCode = null;
-                    pHusaryCard.classList.remove("visible");
-                }
-
-                startPlayerSyncedTimer(room.timeLimit || 20, room.questionStartedAt);
-            }
-
-            var optContainer = document.getElementById("player-options");
-            optContainer.innerHTML = "";
-            for (var i = 0; i < room.currentQuestion.options.length; i++) {
-                var opt = room.currentQuestion.options[i];
-                var rowDiv = document.createElement("div");
-                rowDiv.className = "opt-row";
-
-                var btn = document.createElement("button");
-                btn.type = "button";
-                btn.className = "opt-btn";
-                btn.setAttribute("data-action", "player-submit-answer");
-                btn.setAttribute("data-index", i);
-                btn.disabled = playerHasAnsweredCurrent;
-
-                if (playerHasAnsweredCurrent && myExistingAnswer.choice === i) {
-                    btn.style.background = "#dbeafe";
-                    btn.style.borderColor = "#2563eb";
-                    btn.style.fontWeight = "bold";
-                }
-
-                var spanEn = document.createElement("span");
-                spanEn.className = "opt-en";
-                spanEn.textContent = opt.en + (playerHasAnsweredCurrent && myExistingAnswer.choice === i ? "  🔒 (Locked In)" : "");
-
-                var spanAr = document.createElement("span");
-                spanAr.className = "opt-ar";
-                spanAr.setAttribute("dir", "rtl");
-                spanAr.textContent = opt.ar;
-
-                btn.appendChild(spanEn);
-                btn.appendChild(spanAr);
-
-                var audioBtn = document.createElement("button");
-                audioBtn.type = "button";
-                audioBtn.className = "opt-audio-btn";
-                audioBtn.setAttribute("data-action", "player-speak-option");
-                audioBtn.setAttribute("data-index", i);
-                audioBtn.textContent = "🔊";
-
-                rowDiv.appendChild(btn);
-                rowDiv.appendChild(audioBtn);
-                optContainer.appendChild(rowDiv);
-            }
-
-            if (playerHasAnsweredCurrent) {
-                var fb = document.getElementById("player-feedback");
-                fb.className = "feedback correct";
-                fb.textContent = "🔒 Answer locked in! Waiting for others to finish...";
-                fb.style.display = "block";
-            }
-        } else if (room.status === "reveal" && room.roundResult) {
-            clearInterval(playerTimerInterval);
-            waitBox.style.display = "none";
-            qArea.style.display = "block";
-
-            var res = room.roundResult;
-            var pButtons = document.querySelectorAll("#player-options .opt-btn");
-            for (var k = 0; k < pButtons.length; k++) {
-                pButtons[k].disabled = true;
-                if (k === res.correctIndex) {
-                    pButtons[k].style.background = "#d4edda";
-                    pButtons[k].style.borderColor = "#28a745";
-                    pButtons[k].style.fontWeight = "bold";
-                }
-            }
-            var myPts = 0;
-            if (playerRole === "individual") {
-                myPts = (res.awards && res.awards[playerStudentId]) ? res.awards[playerStudentId] : 0;
-            } else {
-                myPts = (playerTeamNumber === 1) ? res.pts1 : res.pts2;
-            }
-            var personalBanner = myPts > 0
-                ? ("✅ You earned +" + myPts + " pts! — " + res.summaryHeader)
-                : ("❌ No points this round — " + res.summaryHeader);
-
-            setFeedbackMessage(
-                document.getElementById("player-feedback"),
-                myPts > 0,
-                personalBanner,
-                null,
-                res.explanation
-            );
-        } else if (room.status === "finished") {
-            clearInterval(playerTimerInterval);
-            qArea.style.display = "none";
-            waitBox.style.display = "block";
-            if (playerRole === "individual" && room.students) {
-                var rankedList = Object.keys(room.students).map(function(id) { return room.students[id]; })
-                    .sort(function(a, b) { return (b.score || 0) - (a.score || 0); });
-                var htmlRows = rankedList.slice(0, 5).map(function(s, idx) {
-                    return "#" + (idx + 1) + " <strong>" + s.name + "</strong>: " + (s.score || 0) + " pts";
-                }).join("<br>");
-                document.getElementById("player-waiting-msg").innerHTML =
-                    "<strong style='font-size:1.3em; color:#1b4332;'>🏆 Match Completed! / انتهى التحدي</strong><br><br>" + htmlRows;
-            } else {
-                document.getElementById("player-waiting-msg").innerHTML =
-                    "<strong style='font-size:1.3em; color:#1b4332;'>🏆 Match Completed! / انتهى التحدي</strong><br><br>" +
-                    (room.team1Name || "Team 1") + ": <strong>" + (room.score1 || 0) + " pts</strong><br>" +
-                    (room.team2Name || "Team 2") + ": <strong>" + (room.score2 || 0) + " pts</strong>";
-            }
-        }
-    }
-
-    function startPlayerSyncedTimer(limitSec, startedAtMs) {
-        clearInterval(playerTimerInterval);
-        var badge = document.getElementById("player-timer-badge");
-        function tick() {
-            var elapsed = startedAtMs ? Math.floor((Date.now() - startedAtMs) / 1000) : 0;
-            if (elapsed < 0) elapsed = 0;
-            var rem = Math.max(0, limitSec - elapsed);
-            badge.textContent = "⏱️ " + rem + "s";
-            if (rem <= 5) badge.classList.add("timer-danger");
-            else badge.classList.remove("timer-danger");
-            if (rem <= 0) clearInterval(playerTimerInterval);
-        }
-        tick();
-        playerTimerInterval = setInterval(tick, 500);
-    }
-
-    function submitPlayerAnswer(choiceIndex) {
-        if (!playerRoomRef || playerHasAnsweredCurrent) return;
-        playerHasAnsweredCurrent = true;
-        playSound('tick');
-        var answerKey = (playerRole === "individual") ? playerStudentId : ("team" + playerTeamNumber);
-        playerRoomRef.child("answers/" + answerKey).set({
-            choice: choiceIndex,
-            timestamp: firebase.database.ServerValue.TIMESTAMP
+            btn.addEventListener("click", function() {
+                submitPlayerAnswer(idx);
+            });
+            optsEl.appendChild(btn);
         });
     }
 
-    // Check URL query parameters (?room=XXXX&team=1 or ?room=XXXX&mode=individual)
-    (function checkUrlJoinParams() {
-        var params = new URLSearchParams(window.location.search);
-        var roomParam = params.get("room");
-        var teamParam = params.get("team");
-        var modeParam = params.get("mode");
-        if (roomParam) {
-            openPlayerJoinView(roomParam, teamParam || null, modeParam || null);
-            if (roomParam.length === 4 && teamParam && modeParam !== "individual" && isFirebaseReady) {
-                connectPlayerToRoom();
+    function submitPlayerAnswer(choiceIdx) {
+        if (playerHasAnsweredCurrent || !playerRoomRef) return;
+        playerHasAnsweredCurrent = true;
+
+        var btns = document.querySelectorAll("#player-options .opt-btn");
+        for (var i = 0; i < btns.length; i++) {
+            btns[i].disabled = true;
+            if (i === choiceIdx) {
+                btns[i].style.background = "#e0f2fe";
+                btns[i].style.borderColor = "#0284c7";
             }
         }
-    })();
+
+        var ansPath = (playerRole === "individual")
+            ? ("answers/" + playerCurrentQIndex + "/" + playerStudentId)
+            : ("answers/" + playerCurrentQIndex + "/team" + playerTeamNumber);
+
+        playerRoomRef.child(ansPath).set({
+            choice: choiceIdx,
+            name: playerRole === "individual" ? playerStudentName : ("Team " + playerTeamNumber),
+            timestamp: Date.now()
+        });
+
+        var fb = document.getElementById("player-feedback");
+        fb.style.display = "block";
+        fb.className = "feedback correct";
+        fb.textContent = "🔒 Answer locked in! Waiting for round reveal... / تم تثبيت إجابتك!";
+    }
+
+    function revealPlayerRoundFeedback(room) {
+        var btns = document.querySelectorAll("#player-options .opt-btn");
+        for (var i = 0; i < btns.length; i++) {
+            btns[i].disabled = true;
+            if (i === room.correctIndex) {
+                btns[i].style.background = "#d4edda";
+                btns[i].style.borderColor = "#28a745";
+            }
+        }
+        var fb = document.getElementById("player-feedback");
+        fb.style.display = "block";
+        fb.className = "feedback correct";
+        fb.innerHTML = "<strong>👁️ Round Revealed:</strong> " + escapeHtml(room.explanation || "");
+    }
 
     // =========================================================================
-    // ADMIN CUSTOM QUESTIONS (CLOUD-SYNCED TO FIREBASE)
+    // ADMIN DASHBOARD LOGIC (FIREBASE SYNC + BACKUP)
     // =========================================================================
     function renderCustomQuestionsList() {
-        var track = document.getElementById("manage-track-select").value;
-        var listContainer = document.getElementById("custom-questions-list");
-        var stored = (cloudCustomQuestions[track] && cloudCustomQuestions[track].length > 0)
-            ? cloudCustomQuestions[track]
-            : JSON.parse(localStorage.getItem("tajweed_duallang_" + track) || "[]");
-        listContainer.innerHTML = "";
+        var lvl = document.getElementById("manage-track-select").value;
+        var listEl = document.getElementById("custom-questions-list");
+        var arr = (cloudCustomQuestions[lvl] && cloudCustomQuestions[lvl].length > 0)
+            ? cloudCustomQuestions[lvl]
+            : JSON.parse(localStorage.getItem("tajweed_duallang_" + lvl) || "[]");
 
-        if (stored.length === 0) {
-            var emptyP = document.createElement("p");
-            emptyP.style.color = "#64748b";
-            emptyP.style.fontSize = "0.9em";
-            emptyP.style.margin = "8px 0 0 0";
-            emptyP.textContent = "No custom questions added for this level yet. / لا توجد أسئلة مخصصة لهذا المستوى بعد.";
-            listContainer.appendChild(emptyP);
+        listEl.innerHTML = "";
+        if (arr.length === 0) {
+            listEl.innerHTML = '<p style="color:#64748b; font-size:0.9em;">No custom questions added for this level yet.</p>';
             return;
         }
 
-        for (var i = 0; i < stored.length; i++) {
-            var itemDiv = document.createElement("div");
-            itemDiv.className = "custom-q-item";
+        arr.forEach(function(item, index) {
+            var row = document.createElement("div");
+            row.className = "custom-q-item";
 
-            var textDiv = document.createElement("div");
-            textDiv.className = "custom-q-text";
-            
-            var titleStrong = document.createElement("strong");
-            titleStrong.textContent = (i + 1) + ". [" + stored[i].topic + "]" + (stored[i].husaryCode ? " 🎧(" + stored[i].husaryCode + ") " : " ");
-            textDiv.appendChild(titleStrong);
-
-            var enSpan = document.createElement("span");
-            enSpan.textContent = stored[i].qEn + " / ";
-            textDiv.appendChild(enSpan);
-
-            var arSpan = document.createElement("span");
-            arSpan.style.color = "#0f766e";
-            arSpan.style.fontWeight = "bold";
-            arSpan.textContent = stored[i].qAr;
-            textDiv.appendChild(arSpan);
+            var txt = document.createElement("div");
+            txt.className = "custom-q-text";
+            txt.innerHTML = "<strong>[" + escapeHtml(item.topic) + "]</strong> " + escapeHtml(item.qEn);
 
             var delBtn = document.createElement("button");
             delBtn.type = "button";
             delBtn.className = "btn-danger-sm";
-            delBtn.setAttribute("data-action", "delete-custom-q");
-            delBtn.setAttribute("data-track", track);
-            delBtn.setAttribute("data-qindex", i);
-            if (stored[i]._fbKey) delBtn.setAttribute("data-fbkey", stored[i]._fbKey);
-            delBtn.textContent = "🗑️ Delete";
+            delBtn.textContent = "Delete / حذف";
+            delBtn.addEventListener("click", function() {
+                deleteCustomQuestion(lvl, index, item._fbKey);
+            });
 
-            itemDiv.appendChild(textDiv);
-            itemDiv.appendChild(delBtn);
-            listContainer.appendChild(itemDiv);
-        }
+            row.appendChild(txt);
+            row.appendChild(delBtn);
+            listEl.appendChild(row);
+        });
     }
 
     document.getElementById("manage-track-select").addEventListener("change", renderCustomQuestionsList);
 
-    document.getElementById("admin-pass-input").addEventListener("keypress", function(e) {
-        if (e.key === "Enter") { e.preventDefault(); verifyPassword(); }
-    });
+    function addCustomQuestionToCloud() {
+        var lvl = document.getElementById("q-track").value;
+        var topic = (document.getElementById("q-topic").value || "").trim();
+        var qEn = (document.getElementById("q-text-en").value || "").trim();
+        var qAr = (document.getElementById("q-text-ar").value || "").trim();
+        var exp = (document.getElementById("q-exp").value || "").trim();
+        var correctIdx = parseInt(document.getElementById("q-correct").value || "0", 10);
+        var husaryCode = (document.getElementById("q-husary-code").value || "").trim();
+        var husaryLabel = (document.getElementById("q-husary-label").value || "").trim();
 
-    document.getElementById("import-file-input").addEventListener("change", function(e) {
-        var file = e.target.files[0];
-        if (!file) return;
-        var reader = new FileReader();
-        reader.onload = function(evt) {
-            try {
-                var imported = JSON.parse(evt.target.result);
-                ["easy", "advanced", "expert"].forEach(function(lvl) {
-                    if (imported[lvl]) {
-                        localStorage.setItem("tajweed_duallang_" + lvl, JSON.stringify(imported[lvl]));
-                        if (isFirebaseReady && firebaseDb) {
-                            firebaseDb.ref("customQuestions/" + lvl).set(imported[lvl]);
-                        }
-                    }
-                });
-                renderCustomQuestionsList();
-                renderTopicSelectorForLevel();
-                updateLevelMenuBadges();
-                showAdminAlert("Backup questions imported & synced to Firebase Cloud!");
-            } catch (err) { alert("Invalid backup file format!"); }
+        var opts = [];
+        for (var i = 0; i < 4; i++) {
+            var oEn = (document.getElementById("opt-en-" + i).value || "").trim();
+            var oAr = (document.getElementById("opt-ar-" + i).value || "").trim();
+            if (!oEn || !oAr) {
+                alert("Please fill in both English and Arabic for all 4 options.");
+                return;
+            }
+            opts.push({ en: oEn, ar: oAr });
+        }
+
+        if (!topic || !qEn || !qAr) {
+            alert("Please fill in Topic, English Question, and Arabic Question.");
+            return;
+        }
+
+        var newQ = {
+            topic: topic,
+            qEn: qEn,
+            qAr: qAr,
+            options: opts,
+            correct: correctIdx,
+            explanation: exp || "Correct answer confirmed."
         };
-        reader.readAsText(file);
-    });
+        if (husaryCode.length === 6) {
+            newQ.husaryCode = husaryCode;
+            newQ.husaryLabel = husaryLabel || ("Ayah " + husaryCode);
+        }
 
-    function openAdminDashboard(user) {
-        document.getElementById("password-modal").style.display = "none";
-        document.getElementById("admin-pass-input").value = "";
-        document.getElementById("pass-error-msg").style.display = "none";
+        if (isFirebaseReady && firebaseDb) {
+            firebaseDb.ref("customQuestions/" + lvl).push(newQ).then(function() {
+                clearNewQuestionForm();
+                showAdminAlert("✅ Saved & synced to Firebase Cloud!");
+            }).catch(function(err) {
+                alert("Firebase save failed (check Admin sign-in/rules): " + err.message);
+            });
+        } else {
+            var localArr = JSON.parse(localStorage.getItem("tajweed_duallang_" + lvl) || "[]");
+            localArr.push(newQ);
+            localStorage.setItem("tajweed_duallang_" + lvl, JSON.stringify(localArr));
+            clearNewQuestionForm();
+            renderCustomQuestionsList();
+            updateLevelMenuBadges();
+            showAdminAlert("✅ Saved locally (Firebase not connected).");
+        }
+    }
+
+    function clearNewQuestionForm() {
+        ["q-topic", "q-text-en", "q-text-ar", "q-exp", "q-husary-code", "q-husary-label",
+         "opt-en-0", "opt-ar-0", "opt-en-1", "opt-ar-1", "opt-en-2", "opt-ar-2", "opt-en-3", "opt-ar-3"].forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el) el.value = "";
+        });
+    }
+
+    function deleteCustomQuestion(lvl, index, fbKey) {
+        if (!confirm("Delete this custom question?")) return;
+        if (isFirebaseReady && firebaseDb && fbKey) {
+            firebaseDb.ref("customQuestions/" + lvl + "/" + fbKey).remove().then(function() {
+                showAdminAlert("🗑️ Deleted from Firebase Cloud.");
+            });
+        } else {
+            var localArr = JSON.parse(localStorage.getItem("tajweed_duallang_" + lvl) || "[]");
+            localArr.splice(index, 1);
+            localStorage.setItem("tajweed_duallang_" + lvl, JSON.stringify(localArr));
+            renderCustomQuestionsList();
+            updateLevelMenuBadges();
+            showAdminAlert("🗑️ Deleted locally.");
+        }
+    }
+
+    function showAdminAlert(msg) {
+        var box = document.getElementById("admin-alert");
+        box.textContent = msg;
+        box.style.display = "block";
+        setTimeout(function() { box.style.display = "none"; }, 3500);
+    }
+
+    // =========================================================================
+    // NAVIGATION & GLOBAL CLICK DELEGATION
+    // =========================================================================
+    function escapeHtml(str) {
+        return String(str || "")
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;");
+    }
+
+    function resetToMainMenu() {
+        cleanupFirebaseListeners();
         clearInterval(timerInterval);
-        document.getElementById("game-view-container").style.display = "none";
-        document.getElementById("admin-panel").style.display = "block";
-        document.getElementById("btn-admin-view").classList.add("active");
-        document.getElementById("btn-game-view").classList.remove("active");
-        document.getElementById("set-public-game-url").value = getCleanGameUrl();
-        var userLabel = document.getElementById("admin-logged-in-user");
-        if (userLabel && user) {
-            userLabel.textContent = "✅ " + (user.email || user.displayName || "Authenticated");
-        }
-        updateFirebaseStatusBadges();
-        renderTopicSelectorForLevel();
-        renderCustomQuestionsList();
-    }
+        document.getElementById("admin-panel").style.display = "none";
+        document.getElementById("game-view-container").style.display = "block";
+        document.getElementById("menu-container").style.display = "block";
+        document.getElementById("setup-container").style.display = "none";
+        document.getElementById("lobby-container").style.display = "none";
+        document.getElementById("player-join-container").style.display = "none";
+        document.getElementById("player-game-container").style.display = "none";
+        document.getElementById("quiz-container").style.display = "none";
+        document.getElementById("summary-container").style.display = "none";
+        document.getElementById("live-stats").style.display = "none";
+        document.getElementById("timer-bar-container").style.display = "none";
+        document.getElementById("lifeline-bar").style.display = "none";
 
-    function verifyPassword() {
-        var emailVal = document.getElementById("admin-email-input").value.trim();
-        var passVal = document.getElementById("admin-pass-input").value;
-        var errorMsg = document.getElementById("pass-error-msg");
-        var submitBtn = document.getElementById("btn-admin-login-submit");
-
-        if (!firebaseAuth) {
-            errorMsg.textContent = "⚠️ Firebase Auth SDK not initialized.";
-            errorMsg.style.display = "block";
-            return;
-        }
-        if (!emailVal || !passVal) {
-            errorMsg.textContent = "⚠️ Please enter both email and password / أدخل البريد وكلمة المرور";
-            errorMsg.style.display = "block";
-            return;
-        }
-
-        errorMsg.style.display = "none";
-        submitBtn.disabled = true;
-        submitBtn.textContent = "Signing in...";
-
-        firebaseAuth.signInWithEmailAndPassword(emailVal, passVal)
-            .then(function(userCredential) {
-                submitBtn.disabled = false;
-                submitBtn.textContent = "Sign In / دخول";
-                openAdminDashboard(userCredential.user);
-            })
-            .catch(function(err) {
-                submitBtn.disabled = false;
-                submitBtn.textContent = "Sign In / دخول";
-                errorMsg.textContent = "⚠️ " + (err.message || "Authentication failed");
-                errorMsg.style.display = "block";
-            });
-    }
-
-    function signInAdminWithGoogle() {
-        var errorMsg = document.getElementById("pass-error-msg");
-        if (!firebaseAuth) {
-            errorMsg.textContent = "⚠️ Firebase Auth SDK not initialized.";
-            errorMsg.style.display = "block";
-            return;
-        }
-        var provider = new firebase.auth.GoogleAuthProvider();
-        firebaseAuth.signInWithPopup(provider)
-            .then(function(result) {
-                openAdminDashboard(result.user);
-            })
-            .catch(function(err) {
-                errorMsg.textContent = "⚠️ " + (err.message || "Google sign-in failed");
-                errorMsg.style.display = "block";
-            });
+        document.getElementById("btn-game-view").classList.add("active");
+        document.getElementById("btn-admin-view").classList.remove("active");
+        updateMenuSubtitle();
     }
 
     document.addEventListener("click", function(e) {
         var target = e.target.closest("[data-action]");
         if (!target) return;
-
         var action = target.getAttribute("data-action");
-        if (action === "switch-view") {
-            var view = target.getAttribute("data-view");
-            if (view === "admin") {
-                if (document.getElementById("admin-panel").style.display === "block") return;
-                if (firebaseAuth && firebaseAuth.currentUser) {
-                    openAdminDashboard(firebaseAuth.currentUser);
-                    return;
-                }
-                document.getElementById("pass-error-msg").style.display = "none";
-                document.getElementById("admin-pass-input").value = "";
-                document.getElementById("password-modal").style.display = "block";
-                document.getElementById("admin-email-input").focus();
-            } else {
-                document.getElementById("password-modal").style.display = "none";
-                document.getElementById("admin-panel").style.display = "none";
-                document.getElementById("game-view-container").style.display = "block";
-                document.getElementById("btn-game-view").classList.add("active");
-                document.getElementById("btn-admin-view").classList.remove("active");
-                updateLevelMenuBadges();
-                returnToMenu();
-            }
-        } else if (action === "open-player-join") {
-            openPlayerJoinView();
-        } else if (action === "player-connect-room") {
-            connectPlayerToRoom();
-        } else if (action === "player-submit-answer") {
-            var pIdx = parseInt(target.getAttribute("data-index"), 10);
-            submitPlayerAnswer(pIdx);
-        } else if (action === "player-speak-question") {
-            if (playerLatestQuestion) speakArabic(playerLatestQuestion.qAr);
-        } else if (action === "player-play-husary") {
-            if (currentPlayerHusaryCode) playHusaryAyah(currentPlayerHusaryCode, playerLatestQuestion ? playerLatestQuestion.qAr : "");
-        } else if (action === "host-play-husary") {
-            var qCur = activePath[currentQuestion];
-            if (currentHostHusaryCode) playHusaryAyah(currentHostHusaryCode, qCur ? qCur.qAr : "");
-        } else if (action === "stop-husary") {
-            stopHusaryAudio();
-        } else if (action === "player-speak-option") {
-            var pOptIdx = parseInt(target.getAttribute("data-index"), 10);
-            if (playerLatestQuestion && playerLatestQuestion.options[pOptIdx]) {
-                speakArabic(playerLatestQuestion.options[pOptIdx].ar);
-            }
-        } else if (action === "select-play-mode") {
-            selectedPlayMode = target.getAttribute("data-mode");
-            document.getElementById("mode-card-local").classList.toggle("selected", selectedPlayMode === "local");
-            document.getElementById("mode-card-live").classList.toggle("selected", selectedPlayMode === "live");
-            document.getElementById("mode-card-individual").classList.toggle("selected", selectedPlayMode === "individual");
 
-            var isLiveAny = (selectedPlayMode === "live" || selectedPlayMode === "individual");
-            document.getElementById("team-names-inputs").style.display = (selectedPlayMode === "individual") ? "none" : "block";
-            document.getElementById("live-setup-options").style.display = isLiveAny ? "block" : "none";
-            document.getElementById("btn-start-match").textContent = isLiveAny
-                ? "Create Live Room & QR Code / إنشاء غرفة ورمز QR →"
-                : "Start Challenge Now / ابدأ التحدي الآن →";
-            updateFirebaseStatusBadges();
-        } else if (action === "copy-team-link") {
-            var tNum = target.getAttribute("data-team");
-            var baseUrl = getCleanGameUrl();
-            var fullLink = (tNum === "solo")
-                ? (baseUrl + "?room=" + liveRoomCode + "&mode=individual")
-                : (baseUrl + "?room=" + liveRoomCode + "&team=" + tNum);
-            var toast = document.getElementById("copy-link-toast");
-            var labelText = (tNum === "solo")
-                ? "✅ Copied Student Join Link!"
-                : ("✅ Copied Team " + tNum + " Link!");
-            copyTextSafely(fullLink, toast, labelText);
-        } else if (action === "host-launch-live-match") {
-            hostStartLiveMatchFromLobby();
-        } else if (action === "save-firebase-config") {
-            var rawJson = document.getElementById("set-firebase-config").value.trim();
-            try {
-                var cleaned = rawJson.replace(/^[^{]*/, "").replace(/[^}]*$/, "");
-                var cfgObj = JSON.parse(cleaned);
-                if (!cfgObj.databaseURL || !cfgObj.apiKey) {
-                    alert("Config must include both 'apiKey' and 'databaseURL'!");
-                    return;
-                }
-                localStorage.setItem("tajweed_firebase_config", JSON.stringify(cfgObj));
-                initFirebaseFromConfig(cfgObj);
-                updateFirebaseStatusBadges();
-                showAdminAlert("Firebase configuration saved & connected!");
-            } catch (err) {
-                alert("Invalid JSON format. Please copy the JSON object from Firebase Project Settings.");
-            }
-        } else if (action === "select-all-topics") {
-            var lvlAll = document.getElementById("topic-filter-track").value;
-            var allNames = getUniqueTopicsWithCounts(lvlAll).map(function(item) { return item.topic; });
-            saveEnabledTopicsForLevel(lvlAll, allNames);
-            renderTopicSelectorForLevel();
-            showAdminAlert("All topics enabled for this level!");
-        } else if (action === "deselect-all-topics") {
-            var lvlNone = document.getElementById("topic-filter-track").value;
-            var allList = getUniqueTopicsWithCounts(lvlNone);
-            if (allList.length > 0) {
-                saveEnabledTopicsForLevel(lvlNone, [allList[0].topic]);
-                renderTopicSelectorForLevel();
-                showAdminAlert("Cleared all except first topic (at least 1 topic required).");
-            }
+        if (action === "open-player-join") {
+            openPlayerJoinView();
         } else if (action === "toggle-mute") {
             isMuted = !isMuted;
             target.textContent = isMuted ? "🔇 SFX Off" : "🔊 SFX On";
@@ -5693,861 +5890,265 @@
             stopHusaryAudio();
             document.getElementById("tajweed-lab-modal").style.display = "none";
         } else if (action === "play-madd-beats") {
-            var beats = parseInt(target.getAttribute("data-beats"), 10);
+            var beats = parseInt(target.getAttribute("data-beats") || "2", 10);
             playMaddMetronome(beats);
         } else if (action === "show-tajweed-rule") {
             var ruleKey = target.getAttribute("data-rule");
-            var sample = tajweedLabSamples[ruleKey];
-            if (sample) {
-                document.getElementById("tajweed-rule-display").innerHTML = sample.html;
-                document.getElementById("tajweed-rule-note").textContent = sample.note;
-                currentLabSample = sample;
-                playHusaryAyah(sample.husaryCode, sample.tts);
+            if (tajweedLabSamples[ruleKey]) {
+                currentLabSample = tajweedLabSamples[ruleKey];
+                document.getElementById("tajweed-rule-display").innerHTML = currentLabSample.html;
+                document.getElementById("tajweed-rule-note").textContent = currentLabSample.note;
             }
         } else if (action === "speak-lab-sample") {
             playHusaryAyah(currentLabSample.husaryCode, currentLabSample.tts);
-        } else if (action === "speak-question") {
-            var qData = activePath[currentQuestion];
-            if (qData) speakArabic(qData.qAr);
-        } else if (action === "speak-option") {
-            var optIdx = parseInt(target.getAttribute("data-index"), 10);
-            var qDataOpt = activePath[currentQuestion];
-            if (qDataOpt && qDataOpt.options[optIdx]) speakArabic(qDataOpt.options[optIdx].ar);
-        } else if (action === "use-5050") {
-            useFiftyFiftyLifeline();
-        } else if (action === "use-extra-time") {
-            useExtraTimeLifeline();
-        } else if (action === "toggle-fullscreen") {
-            var card = document.querySelector(".game-card");
-            if (!document.fullscreenElement && !document.webkitFullscreenElement && !isCssFullscreenActive) {
-                var docElem = document.documentElement;
-                if (docElem.requestFullscreen) {
-                    docElem.requestFullscreen().catch(function() { enableCssFullscreen(card); });
-                } else if (docElem.webkitRequestFullscreen) {
-                    docElem.webkitRequestFullscreen();
-                } else {
-                    enableCssFullscreen(card);
-                }
-            } else {
-                if (document.fullscreenElement || document.webkitFullscreenElement) {
-                    if (document.exitFullscreen) document.exitFullscreen();
-                    else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
-                } else if (isCssFullscreenActive) {
-                    disableCssFullscreen(card);
-                }
-            }
         } else if (action === "open-rules") {
             document.getElementById("rules-modal").style.display = "block";
         } else if (action === "close-rules") {
             document.getElementById("rules-modal").style.display = "none";
-        } else if (action === "submit-password") {
-            verifyPassword();
-        } else if (action === "google-signin-admin") {
-            signInAdminWithGoogle();
-        } else if (action === "admin-sign-out") {
-            if (firebaseAuth) {
-                firebaseAuth.signOut().then(function() {
-                    document.getElementById("admin-panel").style.display = "none";
-                    document.getElementById("game-view-container").style.display = "block";
-                    document.getElementById("btn-game-view").classList.add("active");
-                    document.getElementById("btn-admin-view").classList.remove("active");
-                    returnToMenu();
-                });
+        } else if (action === "toggle-fullscreen") {
+            if (!document.fullscreenElement && !isCssFullscreenActive) {
+                if (document.documentElement.requestFullscreen) {
+                    document.documentElement.requestFullscreen().catch(function() {});
+                }
+                isCssFullscreenActive = true;
+            } else {
+                if (document.fullscreenElement && document.exitFullscreen) {
+                    document.exitFullscreen().catch(function() {});
+                }
+                isCssFullscreenActive = false;
             }
+        } else if (action === "switch-view") {
+            var view = target.getAttribute("data-view");
+            if (view === "game") {
+                resetToMainMenu();
+            } else if (view === "admin") {
+                if (firebaseAuth && firebaseAuth.currentUser) {
+                    document.getElementById("game-view-container").style.display = "none";
+                    document.getElementById("password-modal").style.display = "none";
+                    document.getElementById("admin-panel").style.display = "block";
+                    document.getElementById("btn-game-view").classList.remove("active");
+                    document.getElementById("btn-admin-view").classList.add("active");
+                    renderTopicSelectorForLevel();
+                    renderCustomQuestionsList();
+                } else {
+                    document.getElementById("pass-error-msg").style.display = "none";
+                    document.getElementById("password-modal").style.display = "block";
+                }
+            }
+        } else if (action === "submit-password") {
+            var email = (document.getElementById("admin-email-input").value || "").trim();
+            var pass = document.getElementById("admin-pass-input").value || "";
+            if (!firebaseAuth) {
+                alert("Firebase Auth is not initialized.");
+                return;
+            }
+            firebaseAuth.signInWithEmailAndPassword(email, pass).then(function() {
+                document.getElementById("password-modal").style.display = "none";
+                document.getElementById("game-view-container").style.display = "none";
+                document.getElementById("admin-panel").style.display = "block";
+                document.getElementById("btn-game-view").classList.remove("active");
+                document.getElementById("btn-admin-view").classList.add("active");
+                renderTopicSelectorForLevel();
+                renderCustomQuestionsList();
+            }).catch(function(err) {
+                var errEl = document.getElementById("pass-error-msg");
+                errEl.textContent = "⚠️ " + err.message;
+                errEl.style.display = "block";
+            });
+        } else if (action === "google-signin-admin") {
+            if (!firebaseAuth) return;
+            var provider = new firebase.auth.GoogleAuthProvider();
+            firebaseAuth.signInWithPopup(provider).then(function() {
+                document.getElementById("password-modal").style.display = "none";
+                document.getElementById("game-view-container").style.display = "none";
+                document.getElementById("admin-panel").style.display = "block";
+                document.getElementById("btn-game-view").classList.remove("active");
+                document.getElementById("btn-admin-view").classList.add("active");
+                renderTopicSelectorForLevel();
+                renderCustomQuestionsList();
+            }).catch(function(err) {
+                var errEl = document.getElementById("pass-error-msg");
+                errEl.textContent = "⚠️ " + err.message;
+                errEl.style.display = "block";
+            });
         } else if (action === "cancel-password") {
             document.getElementById("password-modal").style.display = "none";
-            document.getElementById("admin-pass-input").value = "";
-            document.getElementById("pass-error-msg").style.display = "none";
+        } else if (action === "admin-sign-out") {
+            if (firebaseAuth) firebaseAuth.signOut();
+            resetToMainMenu();
         } else if (action === "choose-path") {
-            currentPathName = target.getAttribute("data-path");
+            currentPathName = target.getAttribute("data-path") || "easy";
             document.getElementById("menu-container").style.display = "none";
             document.getElementById("setup-container").style.display = "block";
             updateFirebaseStatusBadges();
+        } else if (action === "select-play-mode") {
+            selectedPlayMode = target.getAttribute("data-mode") || "local";
+            ["local", "live", "individual"].forEach(function(m) {
+                document.getElementById("mode-card-" + m).classList.toggle("selected", m === selectedPlayMode);
+            });
+            document.getElementById("team-names-inputs").style.display = (selectedPlayMode === "individual") ? "none" : "block";
+            document.getElementById("live-setup-options").style.display = (selectedPlayMode === "local") ? "none" : "block";
         } else if (action === "start-game") {
-            var t1Input = document.getElementById("input-team1").value.trim();
-            var t2Input = document.getElementById("input-team2").value.trim();
-            if (t1Input) team1Name = t1Input;
-            if (t2Input) team2Name = t2Input;
-            document.getElementById("lbl-team1").textContent = team1Name;
-            document.getElementById("lbl-team2").textContent = team2Name;
-
-            if (selectedPlayMode === "live" || selectedPlayMode === "individual") {
-                hostCreateLiveLobby();
-            } else {
-                startLocalGame();
+            startMatchFlow();
+        } else if (action === "copy-team-link") {
+            var teamArg = target.getAttribute("data-team");
+            var baseUrl = getCleanGameUrl();
+            var fullLink = (teamArg === "solo")
+                ? (baseUrl + "?room=" + liveRoomCode + "&mode=solo")
+                : (baseUrl + "?room=" + liveRoomCode + "&team=" + teamArg);
+            var label = (teamArg === "solo") ? "✅ Student Join Link Copied!" : ("✅ Team " + teamArg + " Link Copied!");
+            copyTextSafely(fullLink, document.getElementById("copy-link-toast"), label);
+        } else if (action === "host-launch-live-match") {
+            launchHostQuizScreen();
+        } else if (action === "player-connect-room") {
+            connectPlayerToRoom();
+        } else if (action === "player-speak-question") {
+            if (playerLatestQuestion && playerLatestQuestion.qAr) {
+                speakArabic(playerLatestQuestion.qAr);
             }
-        } else if (action === "next") {
-            clearInterval(autoAdvanceTimeout);
-            nextQuestion();
-        } else if (action === "restart") {
-            returnToMenu();
-        } else if (action === "answer") {
-            var idx = parseInt(target.getAttribute("data-index"), 10);
-            selectAnswer(idx, target);
+        } else if (action === "player-play-husary") {
+            playHusaryAyah(currentPlayerHusaryCode, playerLatestQuestion ? playerLatestQuestion.qAr : "");
+        } else if (action === "speak-question") {
+            var q = activePath[currentQuestion];
+            if (q && q.qAr) speakArabic(q.qAr);
+        } else if (action === "host-play-husary") {
+            var q2 = activePath[currentQuestion];
+            playHusaryAyah(currentHostHusaryCode, q2 ? q2.qAr : "");
+        } else if (action === "stop-husary") {
+            stopHusaryAudio();
+        } else if (action === "use-5050") {
+            if (!lifelines[activeTeam].fiftyFifty) return;
+            lifelines[activeTeam].fiftyFifty = false;
+            updateScoreboardUI();
+            var q3 = activePath[currentQuestion];
+            var btns = document.querySelectorAll("#options .opt-btn");
+            var wrongIndices = [];
+            for (var i = 0; i < btns.length; i++) {
+                if (i !== q3.correct) wrongIndices.push(i);
+            }
+            wrongIndices.sort(function() { return 0.5 - Math.random(); });
+            wrongIndices.slice(0, 2).forEach(function(wIdx) {
+                btns[wIdx].disabled = true;
+                btns[wIdx].style.opacity = "0.35";
+            });
+        } else if (action === "use-extra-time") {
+            if (!lifelines[activeTeam].extraTime) return;
+            lifelines[activeTeam].extraTime = false;
+            timeLeft += 15;
+            updateTimerUI();
+            updateScoreboardUI();
         } else if (action === "trigger-transfer") {
-            startTransferPhase();
+            triggerTransferPhase();
         } else if (action === "reveal-answer") {
-            revealAndSkip();
-        } else if (action === "refresh-leaderboard") {
-            fetchLiveLeaderboard();
+            revealCorrectAnswerLocal(false);
+        } else if (action === "next") {
+            advanceToNextQuestion();
+        } else if (action === "restart") {
+            resetToMainMenu();
         } else if (action === "print-certificate") {
             window.print();
         } else if (action === "export-match-report") {
-            exportMatchSummaryReport();
-        } else if (action === "save-settings") {
-            var publicUrlVal = document.getElementById("set-public-game-url").value.trim();
-            if (publicUrlVal) {
-                localStorage.setItem("tajweed_public_game_url", publicUrlVal);
+            var lines = ["TAJWEED HALAQAH CHALLENGE - MATCH REPORT", "========================================",
+                document.getElementById("winner-announcement").textContent,
+                document.getElementById("final-details").textContent, ""];
+            matchHistory.forEach(function(item, idx) {
+                lines.push("Q" + (idx + 1) + ": " + item.qEn);
+                lines.push("   Arabic: " + item.qAr);
+                lines.push("   Answer: " + item.correctAnswer + " [" + (item.wasCorrect ? "Correct" : "Missed") + "]");
+            });
+            var blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
+            var a = document.createElement("a");
+            a.href = URL.createObjectURL(blob);
+            a.download = "Tajweed_Match_Report.txt";
+            a.click();
+        } else if (action === "refresh-leaderboard") {
+            fetchLiveLeaderboard();
+        } else if (action === "save-firebase-config") {
+            try {
+                var cfg = JSON.parse(document.getElementById("set-firebase-config").value);
+                localStorage.setItem("tajweed_firebase_config", JSON.stringify(cfg));
+                initFirebaseFromConfig(cfg);
+                updateFirebaseStatusBadges();
+                showAdminAlert("✅ Firebase config saved & connected!");
+            } catch (err) {
+                alert("Invalid JSON in Firebase Config: " + err.message);
             }
+        } else if (action === "save-settings") {
+            localStorage.setItem("tajweed_public_game_url", document.getElementById("set-public-game-url").value.trim());
             localStorage.setItem("tajweed_easy_time", document.getElementById("set-easy-time").value);
             localStorage.setItem("tajweed_adv_time", document.getElementById("set-adv-time").value);
             localStorage.setItem("tajweed_exp_time", document.getElementById("set-exp-time").value);
             localStorage.setItem("tajweed_q_count", document.getElementById("set-q-count").value);
             updateMenuSubtitle();
-            showAdminAlert("Match & URL settings saved successfully!");
-        } else if (action === "add-question") {
-            addNewQuestionToStorage();
-        } else if (action === "delete-custom-q") {
-            var delTrack = target.getAttribute("data-track");
-            var delIndex = parseInt(target.getAttribute("data-qindex"), 10);
-            var fbKey = target.getAttribute("data-fbkey");
-
-            if (isFirebaseReady && firebaseDb && fbKey) {
-                firebaseDb.ref("customQuestions/" + delTrack + "/" + fbKey).remove();
-            } else {
-                var stored = JSON.parse(localStorage.getItem("tajweed_duallang_" + delTrack) || "[]");
-                stored.splice(delIndex, 1);
-                localStorage.setItem("tajweed_duallang_" + delTrack, JSON.stringify(stored));
-                if (isFirebaseReady && firebaseDb) {
-                    firebaseDb.ref("customQuestions/" + delTrack).set(stored);
-                }
-            }
-            renderCustomQuestionsList();
+            showAdminAlert("✅ All match & hosting settings saved!");
+        } else if (action === "select-all-topics") {
+            var lvlSel = document.getElementById("topic-filter-track").value;
+            var allT = getUniqueTopicsWithCounts(lvlSel).map(function(x) { return x.topic; });
+            saveEnabledTopicsForLevel(lvlSel, allT);
             renderTopicSelectorForLevel();
-            updateLevelMenuBadges();
-            showAdminAlert("Custom question deleted from cloud.");
+        } else if (action === "deselect-all-topics") {
+            var lvlDesel = document.getElementById("topic-filter-track").value;
+            var firstT = getUniqueTopicsWithCounts(lvlDesel).map(function(x) { return x.topic; }).slice(0, 1);
+            saveEnabledTopicsForLevel(lvlDesel, firstT);
+            renderTopicSelectorForLevel();
+        } else if (action === "add-question") {
+            addCustomQuestionToCloud();
         } else if (action === "export-questions") {
-            var exportData = {
-                easy: getAllCombinedQuestionsForLevel("easy").slice(dualLanguagePaths.easy.length),
-                advanced: getAllCombinedQuestionsForLevel("advanced").slice(dualLanguagePaths.advanced.length),
-                expert: getAllCombinedQuestionsForLevel("expert").slice(dualLanguagePaths.expert.length)
+            var backup = {
+                easy: cloudCustomQuestions.easy || [],
+                advanced: cloudCustomQuestions.advanced || [],
+                expert: cloudCustomQuestions.expert || []
             };
-            var dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportData, null, 2));
-            var dlAnchor = document.createElement('a');
-            dlAnchor.setAttribute("href", dataStr);
-            dlAnchor.setAttribute("download", "tajweed_cloud_custom_questions.json");
-            document.body.appendChild(dlAnchor); dlAnchor.click(); dlAnchor.remove();
-            showAdminAlert("Backup exported successfully!");
+            var bBlob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+            var link = document.createElement("a");
+            link.href = URL.createObjectURL(bBlob);
+            link.download = "tajweed_custom_questions_backup.json";
+            link.click();
         } else if (action === "trigger-import") {
             document.getElementById("import-file-input").click();
         }
     });
 
-    function enableCssFullscreen(card) {
-        isCssFullscreenActive = true;
-        card.style.position = "fixed";
-        card.style.top = "0";
-        card.style.left = "0";
-        card.style.width = "100vw";
-        card.style.height = "100vh";
-        card.style.maxWidth = "none";
-        card.style.borderRadius = "0";
-        card.style.zIndex = "99999";
-        card.style.overflowY = "auto";
-        card.style.boxSizing = "border-box";
-    }
-
-    function disableCssFullscreen(card) {
-        isCssFullscreenActive = false;
-        card.style.position = "static";
-        card.style.width = "auto";
-        card.style.height = "auto";
-        card.style.maxWidth = "880px";
-        card.style.borderRadius = "12px";
-        card.style.zIndex = "1";
-        card.style.overflowY = "visible";
-    }
-
-    function shuffleArray(array) {
-        var currentIndex = array.length, temporaryValue, randomIndex;
-        while (0 !== currentIndex) {
-            randomIndex = Math.floor(Math.random() * currentIndex);
-            currentIndex -= 1;
-            temporaryValue = array[currentIndex];
-            array[currentIndex] = array[randomIndex];
-            array[randomIndex] = temporaryValue;
-        }
-        return array;
-    }
-
-    function startLocalGame() {
-        cleanupFirebaseListeners();
-        buildQuestionPool();
-        
-        currentQuestion = 0; score1 = 0; score2 = 0; streak1 = 0; streak2 = 0; maxStreak1 = 0; maxStreak2 = 0;
-        activeTeam = 1; isTransferPhase = false; matchHistory = [];
-        lifelines = {
-            1: { fiftyFifty: true, extraTime: true },
-            2: { fiftyFifty: true, extraTime: true }
+    document.getElementById("import-file-input").addEventListener("change", function(e) {
+        var file = e.target.files[0];
+        if (!file) return;
+        var reader = new FileReader();
+        reader.onload = function(evt) {
+            try {
+                var parsed = JSON.parse(evt.target.result);
+                ["easy", "advanced", "expert"].forEach(function(lvl) {
+                    if (Array.isArray(parsed[lvl])) {
+                        if (isFirebaseReady && firebaseDb) {
+                            parsed[lvl].forEach(function(qItem) {
+                                delete qItem._fbKey;
+                                firebaseDb.ref("customQuestions/" + lvl).push(qItem);
+                            });
+                        } else {
+                            localStorage.setItem("tajweed_duallang_" + lvl, JSON.stringify(parsed[lvl]));
+                        }
+                    }
+                });
+                showAdminAlert("✅ Backup imported successfully!");
+            } catch (err) {
+                alert("Invalid backup JSON file: " + err.message);
+            }
         };
+        reader.readAsText(file);
+    });
 
-        document.getElementById("host-room-pill").style.display = "none";
-        document.getElementById("t1-live-status").textContent = "";
-        document.getElementById("t2-live-status").textContent = "";
-        document.getElementById("t1-box").style.display = "block";
-        document.getElementById("t2-box").style.display = "block";
-        document.getElementById("indiv-stats-box").style.display = "none";
-        document.getElementById("host-indiv-podium").style.display = "none";
-
-        updateScoresUI();
-        document.getElementById("setup-container").style.display = "none";
-        document.getElementById("summary-container").style.display = "none";
-        document.getElementById("quiz-container").style.display = "block";
-        document.getElementById("live-stats").style.display = "flex";
-        document.getElementById("lifeline-bar").style.display = "flex";
-        document.getElementById("timer-bar-container").style.display = "block";
-
-        loadQuestion();
-    }
-
-    function updateScoresUI() {
-        document.getElementById("score1").textContent = score1;
-        document.getElementById("score2").textContent = score2;
-        document.getElementById("streak1").textContent = streak1;
-        document.getElementById("streak2").textContent = streak2;
-
-        var t1Box = document.getElementById("t1-box");
-        var t2Box = document.getElementById("t2-box");
-        var banner = document.getElementById("turn-banner");
-        var currentTeamName = (activeTeam === 1) ? team1Name : team2Name;
-
-        if (selectedPlayMode === "individual") {
-            banner.textContent = "👤 Individual Student Mode — All Students Answering on Their Devices!";
-            banner.style.background = "#ede9fe";
-            banner.style.color = "#5b21b6";
-            return;
+    // =========================================================================
+    // AUTO-DETECT ?room=XXXX&team=1|2|solo URL PARAMETERS ON LOAD
+    // =========================================================================
+    (function checkUrlJoinParams() {
+        var params = new URLSearchParams(window.location.search);
+        var roomParam = params.get("room");
+        var teamParam = params.get("team");
+        var modeParam = params.get("mode");
+        if (roomParam) {
+            openPlayerJoinView(roomParam, teamParam, modeParam);
         }
-
-        if (selectedPlayMode === "live") {
-            t1Box.classList.add("active-turn");
-            t2Box.classList.add("active-turn");
-            banner.textContent = "🌐 Live Zoom Breakout Room Mode — Both Teams Answering Simultaneously!";
-            banner.style.background = "#dbeafe";
-            banner.style.color = "#1e40af";
-            return;
-        }
-
-        if (activeTeam === 1) { t1Box.classList.add("active-turn"); t2Box.classList.remove("active-turn"); }
-        else { t2Box.classList.add("active-turn"); t1Box.classList.remove("active-turn"); }
-
-        var btn5050 = document.getElementById("btn-lifeline-5050");
-        var btnTime = document.getElementById("btn-lifeline-time");
-        if (btn5050 && btnTime) {
-            btn5050.disabled = !lifelines[activeTeam].fiftyFifty || isTransferPhase;
-            btnTime.disabled = !lifelines[activeTeam].extraTime;
-        }
-
-        if (isTransferPhase) {
-            banner.textContent = "🔄 Transfer Phase / مرحلة التحويل! Turn / الدور: " + currentTeamName;
-            banner.style.background = "#fef3c7"; banner.style.color = "#92400e";
-        } else {
-            banner.textContent = "Turn / الدور: " + currentTeamName;
-            banner.style.background = (activeTeam === 1) ? "#e0f2fe" : "#fce7f3";
-            banner.style.color = (activeTeam === 1) ? "#0369a1" : "#be185d";
-        }
-    }
-
-    function useFiftyFiftyLifeline() {
-        if (!lifelines[activeTeam].fiftyFifty || isTransferPhase) return;
-        var qData = activePath[currentQuestion];
-        var buttons = document.querySelectorAll(".opt-btn");
-        var wrongIndices = [];
-        for (var i = 0; i < buttons.length; i++) {
-            if (i !== qData.correct && !buttons[i].disabled) wrongIndices.push(i);
-        }
-        shuffleArray(wrongIndices);
-        var toRemove = wrongIndices.slice(0, 2);
-        for (var j = 0; j < toRemove.length; j++) {
-            var btn = buttons[toRemove[j]];
-            btn.disabled = true;
-            btn.style.opacity = "0.35";
-            btn.setAttribute("data-eliminated", "true");
-        }
-        lifelines[activeTeam].fiftyFifty = false;
-        playSound('tick');
-        updateScoresUI();
-    }
-
-    function useExtraTimeLifeline() {
-        if (!lifelines[activeTeam].extraTime) return;
-        timeLeft += 15;
-        if (timeLeft > timeLimit + 15) timeLeft = timeLimit + 15;
-        lifelines[activeTeam].extraTime = false;
-        playSound('correct');
-        updateTimerUI();
-        updateScoresUI();
-    }
-
-    function startTimer() {
-        clearInterval(timerInterval);
-        timeLeft = timeLimit;
-        updateTimerUI();
-        timerInterval = setInterval(function() {
-            timeLeft--;
-            updateTimerUI();
-            if (timeLeft <= 5 && timeLeft > 0) playSound('tick');
-            if (timeLeft <= 0) { clearInterval(timerInterval); playSound('wrong'); handleTimeOut(); }
-        }, 1000);
-    }
-
-    function updateTimerUI() {
-        var timerDisplay = document.getElementById("timer-display");
-        var timerBar = document.getElementById("timer-bar");
-        timerDisplay.textContent = "⏱️ " + timeLeft + "s";
-        var pct = Math.min(100, (timeLeft / timeLimit) * 100);
-        timerBar.style.width = pct + "%";
-        if (timeLeft <= 5) timerDisplay.classList.add("timer-danger");
-        else timerDisplay.classList.remove("timer-danger");
-    }
-
-    function setFeedbackMessage(el, isCorrect, headerText, bodyText, explanationText) {
-        el.innerHTML = "";
-        el.className = isCorrect ? "feedback correct" : "feedback incorrect";
-        
-        var strong = document.createElement("strong");
-        strong.textContent = headerText;
-        el.appendChild(strong);
-
-        if (bodyText) {
-            el.appendChild(document.createElement("br"));
-            var spanBody = document.createElement("span");
-            spanBody.textContent = bodyText;
-            el.appendChild(spanBody);
-        }
-
-        if (explanationText) {
-            el.appendChild(document.createElement("br"));
-            el.appendChild(document.createElement("br"));
-            var em = document.createElement("em");
-            em.textContent = "Explanation / التوضيح: ";
-            el.appendChild(em);
-            var spanExp = document.createElement("span");
-            spanExp.textContent = explanationText;
-            el.appendChild(spanExp);
-        }
-        el.style.display = "block";
-    }
-
-    function loadQuestion() {
-        stopHusaryAudio();
-        isTransferPhase = false;
-        document.getElementById("transfer-btn").style.display = "none";
-        document.getElementById("reveal-btn").style.display = "none";
-        
-        var isFinalQuestion = (currentQuestion === activePath.length - 1);
-        document.getElementById("double-pts-badge").style.display = isFinalQuestion ? "inline-block" : "none";
-
-        updateScoresUI();
-        var qData = activePath[currentQuestion];
-        document.getElementById("topic").textContent = qData.topic;
-
-        var hostHusaryCard = document.getElementById("host-husary-card");
-        if (qData.husaryCode) {
-            currentHostHusaryCode = qData.husaryCode;
-            document.getElementById("host-husary-ref").textContent = qData.husaryLabel || "Listen to Shaykh Al-Husary's recitation";
-            hostHusaryCard.classList.add("visible");
-        } else {
-            currentHostHusaryCode = null;
-            hostHusaryCard.classList.remove("visible");
-        }
-        
-        document.getElementById("q-en-text").textContent = (currentQuestion + 1) + ". " + qData.qEn;
-        document.getElementById("q-ar-text").textContent = qData.qAr;
-        document.getElementById("progress").textContent = "Question " + (currentQuestion + 1) + " of " + activePath.length;
-        
-        var optContainer = document.getElementById("options");
-        optContainer.innerHTML = "";
-        for (var i = 0; i < qData.options.length; i++) {
-            var rowDiv = document.createElement("div");
-            rowDiv.className = "opt-row";
-
-            var btn = document.createElement("button");
-            btn.type = "button";
-            btn.className = "opt-btn";
-            if (selectedPlayMode === "local") {
-                btn.setAttribute("data-action", "answer");
-                btn.setAttribute("data-index", i);
-            } else {
-                btn.disabled = true;
-            }
-
-            var spanEn = document.createElement("span");
-            spanEn.className = "opt-en";
-            spanEn.textContent = qData.options[i].en;
-
-            var spanAr = document.createElement("span");
-            spanAr.className = "opt-ar";
-            spanAr.setAttribute("dir", "rtl");
-            spanAr.textContent = qData.options[i].ar;
-
-            btn.appendChild(spanEn);
-            btn.appendChild(spanAr);
-
-            var audioBtn = document.createElement("button");
-            audioBtn.type = "button";
-            audioBtn.className = "opt-audio-btn";
-            audioBtn.setAttribute("data-action", "speak-option");
-            audioBtn.setAttribute("data-index", i);
-            audioBtn.title = "Listen to Arabic option";
-            audioBtn.textContent = "🔊";
-
-            rowDiv.appendChild(btn);
-            rowDiv.appendChild(audioBtn);
-            optContainer.appendChild(rowDiv);
-        }
-        document.getElementById("feedback").style.display = "none";
-        document.getElementById("next-btn").style.display = "none";
-
-        if (selectedPlayMode === "live" || selectedPlayMode === "individual") {
-            hostPushLiveQuestion(qData);
-        }
-        startTimer();
-    }
-
-    function highlightCorrectAnswer(qData, buttons) {
-        for (var i = 0; i < buttons.length; i++) {
-            buttons[i].disabled = true;
-            if (i === qData.correct) {
-                buttons[i].style.opacity = "1";
-                buttons[i].style.background = "#d4edda";
-                buttons[i].style.borderColor = "#28a745";
-                buttons[i].style.fontWeight = "bold";
-            }
-        }
-    }
-
-    function recordMatchQuestion(qData, wasAnsweredCorrectly, outcomeLabel) {
-        matchHistory.push({
-            number: currentQuestion + 1,
-            topic: qData.topic,
-            qEn: qData.qEn,
-            qAr: qData.qAr,
-            correctOpt: qData.options[qData.correct],
-            explanation: qData.explanation,
-            solved: wasAnsweredCorrectly,
-            outcome: outcomeLabel
-        });
-    }
-
-    function handleTimeOut() {
-        clearInterval(timerInterval);
-        if ((selectedPlayMode === "live" || selectedPlayMode === "individual") && liveRoomRef) {
-            liveRoomRef.child("answers").once("value", function(snap) {
-                var ans = snap.val() || {};
-                if (selectedPlayMode === "individual") {
-                    evaluateIndividualRound(ans);
-                } else {
-                    evaluateLiveSimultaneousRound(ans.team1 || null, ans.team2 || null);
-                }
-            });
-            return;
-        }
-
-        var qData = activePath[currentQuestion];
-        var buttons = document.querySelectorAll(".opt-btn");
-        var currentTeamName = (activeTeam === 1) ? team1Name : team2Name;
-        var feedback = document.getElementById("feedback");
-
-        if (!isTransferPhase) {
-            if (activeTeam === 1) streak1 = 0; else streak2 = 0;
-            updateScoresUI();
-            for (var i = 0; i < buttons.length; i++) { buttons[i].disabled = true; }
-            setFeedbackMessage(
-                feedback,
-                false,
-                "⏰ Time's up / انتهى الوقت لفريق " + currentTeamName + "!",
-                "You can transfer this question or reveal the answer! / يمكنك تحويل السؤال أو إظهار الإجابة!",
-                null
-            );
-            document.getElementById("transfer-btn").style.display = "inline-block";
-            document.getElementById("reveal-btn").style.display = "inline-block";
-        } else {
-            updateScoresUI();
-            highlightCorrectAnswer(qData, buttons);
-            recordMatchQuestion(qData, false, "Timed out on transfer (" + currentTeamName + ")");
-            setFeedbackMessage(
-                feedback,
-                false,
-                "⏰ Time's up on transfer too! No points. / انتهى وقت التحويل!",
-                null,
-                qData.explanation
-            );
-            showNextButton();
-        }
-    }
-
-    function selectAnswer(selectedIndex, selectedBtn) {
-        if (selectedBtn.disabled || selectedPlayMode !== "local") return;
-        clearInterval(timerInterval);
-        var qData = activePath[currentQuestion];
-        var feedback = document.getElementById("feedback");
-        var buttons = document.querySelectorAll(".opt-btn");
-        var currentTeamName = (activeTeam === 1) ? team1Name : team2Name;
-        var isFinalQuestion = (currentQuestion === activePath.length - 1);
-
-        if (selectedIndex === qData.correct) {
-            highlightCorrectAnswer(qData, buttons);
-            playSound('correct');
-
-            var basePts = 1;
-            var speedBonus = (!isTransferPhase && timeLeft > (timeLimit * 0.5)) ? 1 : 0;
-            var streakBonus = 0;
-
-            if (activeTeam === 1) {
-                streak1++;
-                if (streak1 > maxStreak1) maxStreak1 = streak1;
-                if (streak1 >= 3) streakBonus = 1;
-            } else {
-                streak2++;
-                if (streak2 > maxStreak2) maxStreak2 = streak2;
-                if (streak2 >= 3) streakBonus = 1;
-            }
-
-            var totalEarned = basePts + speedBonus + streakBonus;
-            if (isFinalQuestion) totalEarned *= 2;
-
-            if (activeTeam === 1) {
-                score1 += totalEarned;
-                syncScoreToSheet(team1Name, score1);
-            } else {
-                score2 += totalEarned;
-                syncScoreToSheet(team2Name, score2);
-            }
-
-            var bonusNotes = [];
-            if (speedBonus > 0) bonusNotes.push("⚡ +1 Speed");
-            if (streakBonus > 0) bonusNotes.push("🔥 +1 Streak");
-            if (isFinalQuestion) bonusNotes.push("⭐ 2x Finale");
-            var bonusText = bonusNotes.length > 0 ? " [" + bonusNotes.join(", ") + "]" : "";
-
-            var label = (isTransferPhase ? "Stolen by " : "Solved by ") + currentTeamName + " (+" + totalEarned + " pts)";
-            recordMatchQuestion(qData, true, label);
-            setFeedbackMessage(
-                feedback,
-                true,
-                "Correct / إجابة صحيحة من " + currentTeamName + "! (+" + totalEarned + " pts" + bonusText + ")",
-                null,
-                qData.explanation
-            );
-            updateScoresUI();
-            showNextButton();
-        } else {
-            playSound('wrong');
-            selectedBtn.style.background = "#f8d7da";
-            selectedBtn.style.borderColor = "#dc3545";
-            selectedBtn.setAttribute("data-eliminated", "true");
-            
-            if (!isTransferPhase) {
-                if (activeTeam === 1) streak1 = 0; else streak2 = 0;
-                updateScoresUI();
-                for (var i = 0; i < buttons.length; i++) { buttons[i].disabled = true; }
-                setFeedbackMessage(
-                    feedback,
-                    false,
-                    "Incorrect / إجابة غير صحيحة من " + currentTeamName + ".",
-                    "Would you like to transfer the question or reveal the answer? / هل تريد تحويل السؤال أم إظهار الإجابة؟",
-                    null
-                );
-                document.getElementById("transfer-btn").style.display = "inline-block";
-                document.getElementById("reveal-btn").style.display = "inline-block";
-            } else {
-                updateScoresUI();
-                highlightCorrectAnswer(qData, buttons);
-                recordMatchQuestion(qData, false, "Missed on transfer by " + currentTeamName);
-                setFeedbackMessage(
-                    feedback,
-                    false,
-                    "Incorrect on transfer / إجابة غير صحيحة في التحويل.",
-                    null,
-                    qData.explanation
-                );
-                showNextButton();
-            }
-        }
-    }
-
-    function revealAndSkip() {
-        var qData = activePath[currentQuestion];
-        var buttons = document.querySelectorAll(".opt-btn");
-        var feedback = document.getElementById("feedback");
-        document.getElementById("transfer-btn").style.display = "none";
-        document.getElementById("reveal-btn").style.display = "none";
-        highlightCorrectAnswer(qData, buttons);
-        recordMatchQuestion(qData, false, "Answer revealed (No points)");
-        setFeedbackMessage(
-            feedback,
-            false,
-            "Answer Revealed / تم إظهار الإجابة الصحيحة (No points awarded).",
-            null,
-            qData.explanation
-        );
-        showNextButton();
-    }
-
-    function startTransferPhase() {
-        isTransferPhase = true;
-        activeTeam = (activeTeam === 1) ? 2 : 1;
-        document.getElementById("transfer-btn").style.display = "none";
-        document.getElementById("reveal-btn").style.display = "none";
-        document.getElementById("feedback").style.display = "none";
-        updateScoresUI();
-        var buttons = document.querySelectorAll(".opt-btn");
-        for (var i = 0; i < buttons.length; i++) {
-            if (buttons[i].getAttribute("data-eliminated") === "true") {
-                buttons[i].disabled = true;
-            } else {
-                buttons[i].disabled = false;
-                buttons[i].style.opacity = "1";
-                buttons[i].style.background = "#f8fafc";
-                buttons[i].style.borderColor = "#cbd5e1";
-                buttons[i].style.fontWeight = "normal";
-            }
-        }
-        startTimer();
-    }
-
-    function showNextButton() {
-        var nextBtn = document.getElementById("next-btn");
-        nextBtn.style.display = "inline-block";
-        nextBtn.textContent = (currentQuestion < activePath.length - 1) ? "Next Question / السؤال التالي →" : "View Final Results / عرض النتائج";
-    }
-
-    function nextQuestion() {
-        clearInterval(autoAdvanceTimeout);
-        currentQuestion++;
-        activeTeam = (currentQuestion % 2 === 0) ? 1 : 2;
-        if (currentQuestion < activePath.length) loadQuestion(); else showSummary();
-    }
-
-    function renderMatchReview() {
-        var listEl = document.getElementById("match-review-list");
-        listEl.innerHTML = "";
-        for (var i = 0; i < matchHistory.length; i++) {
-            var item = matchHistory[i];
-            var div = document.createElement("div");
-            div.className = "review-item";
-
-            var headerDiv = document.createElement("div");
-            headerDiv.style.display = "flex";
-            headerDiv.style.justifyContent = "space-between";
-            headerDiv.style.alignItems = "center";
-            headerDiv.style.marginBottom = "4px";
-
-            var qTitle = document.createElement("strong");
-            qTitle.textContent = "Q" + item.number + ": " + item.qEn;
-
-            var badge = document.createElement("span");
-            badge.className = item.solved ? "badge-correct" : "badge-missed";
-            badge.textContent = item.outcome;
-
-            headerDiv.appendChild(qTitle);
-            headerDiv.appendChild(badge);
-
-            var arP = document.createElement("div");
-            arP.style.color = "#0f766e";
-            arP.style.fontWeight = "bold";
-            arP.style.fontFamily = "'Amiri', serif";
-            arP.style.fontSize = "1.1em";
-            arP.textContent = item.qAr;
-
-            var ansP = document.createElement("div");
-            ansP.style.fontSize = "0.9em";
-            ansP.style.color = "#155724";
-            ansP.style.marginTop = "4px";
-            ansP.textContent = "✓ Answer: " + item.correctOpt.en + " (" + item.correctOpt.ar + ")";
-
-            div.appendChild(headerDiv);
-            div.appendChild(arP);
-            div.appendChild(ansP);
-            listEl.appendChild(div);
-        }
-    }
-
-    function exportMatchSummaryReport() {
-        var dateStr = new Date().toLocaleDateString();
-        var levelNames = { easy: "Level 1: Core Tajweed", advanced: "Level 2: Advanced Rules", expert: "Level 3: Expert Recitation" };
-        var scoreSummaryLine = (selectedPlayMode === "individual")
-            ? ("Mode: Individual Students (" + Object.keys(indivPlayersMap).length + " players)")
-            : (team1Name + ": " + score1 + " pts (Best Streak: " + maxStreak1 + ") | " + team2Name + ": " + score2 + " pts (Best Streak: " + maxStreak2 + ")");
-
-        var lines = [
-            "TAJWEED HALAQAH CHALLENGE - MATCH SUMMARY REPORT",
-            "Date: " + dateStr,
-            "Level: " + (levelNames[currentPathName] || currentPathName),
-            "--------------------------------------------------",
-            scoreSummaryLine,
-            "--------------------------------------------------",
-            "QUESTION REVIEW:",
-            ""
-        ];
-        for (var i = 0; i < matchHistory.length; i++) {
-            var h = matchHistory[i];
-            lines.push("Q" + h.number + " [" + h.topic + "] - " + h.outcome);
-            lines.push("  EN: " + h.qEn);
-            lines.push("  AR: " + h.qAr);
-            lines.push("  Correct Answer: " + h.correctOpt.en + " | " + h.correctOpt.ar);
-            lines.push("  Explanation: " + h.explanation);
-            lines.push("");
-        }
-        var blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
-        var url = URL.createObjectURL(blob);
-        var a = document.createElement("a");
-        a.href = url;
-        a.download = "Tajweed_Match_Report_" + dateStr.replace(/\//g, "-") + ".txt";
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
-    }
-
-    function showSummary() {
-        clearInterval(timerInterval);
-        clearInterval(autoAdvanceTimeout);
-        stopHusaryAudio();
-
-        if ((selectedPlayMode === "live" || selectedPlayMode === "individual") && liveRoomRef) {
-            liveRoomRef.update({
-                status: "finished",
-                score1: score1,
-                score2: score2,
-                students: indivPlayersMap
-            });
-        }
-        document.getElementById("quiz-container").style.display = "none";
-        document.getElementById("live-stats").style.display = "none";
-        document.getElementById("lifeline-bar").style.display = "none";
-        document.getElementById("timer-bar-container").style.display = "none";
-        document.getElementById("summary-container").style.display = "block";
-
-        var indivStandingsBox = document.getElementById("indiv-final-standings-box");
-        if (selectedPlayMode === "individual") {
-            var ranked = Object.keys(indivPlayersMap).map(function(id) { return indivPlayersMap[id]; })
-                .sort(function(a, b) { return (b.score || 0) - (a.score || 0); });
-            var topChampion = ranked.length > 0 ? ranked[0].name : "Everyone";
-            document.getElementById("winner-announcement").textContent = "🎉 Champion: " + topChampion + "! / تهانينا للفائز! 🎉";
-            document.getElementById("final-details").textContent = "Total Participants: " + ranked.length + " Students";
-
-            var finalList = document.getElementById("indiv-final-list");
-            finalList.innerHTML = "";
-            ranked.forEach(function(st, idx) {
-                var rDiv = document.createElement("div");
-                rDiv.className = "indiv-podium-row";
-                rDiv.innerHTML = "<span><strong>#" + (idx + 1) + "</strong> " + st.name + " (🔥 Max Streak: " + (st.maxStreak || 0) + ")</span><strong>" + (st.score || 0) + " pts</strong>";
-                finalList.appendChild(rDiv);
-                if (idx < 3) syncScoreToSheet(st.name, st.score || 0);
-            });
-            indivStandingsBox.style.display = "block";
-        } else {
-            indivStandingsBox.style.display = "none";
-            var winnerText = "";
-            if (score1 > score2) winnerText = "🎉 Congratulations to " + team1Name + "! / تهانينا لفوز " + team1Name + "! 🎉";
-            else if (score2 > score1) winnerText = "🎉 Congratulations to " + team2Name + "! / تهانينا لفوز " + team2Name + "! 🎉";
-            else winnerText = "🤝 It's a Tie! / تعادل بين الفريقين! 🤝";
-            document.getElementById("winner-announcement").textContent = winnerText;
-            document.getElementById("final-details").textContent = team1Name + ": " + score1 + " (🔥 Max: " + maxStreak1 + ") | " + team2Name + ": " + score2 + " (🔥 Max: " + maxStreak2 + ")";
-        }
-        
-        var levelNames = { easy: "Level 1: Core Tajweed", advanced: "Level 2: Advanced Rules", expert: "Level 3: Expert Recitation" };
-        document.getElementById("match-meta-details").textContent = (levelNames[currentPathName] || "") + " • Date: " + new Date().toLocaleDateString();
-
-        renderMatchReview();
-        fetchLiveLeaderboard();
-    }
-
-    function returnToMenu() {
-        clearInterval(timerInterval);
-        cleanupFirebaseListeners();
-        document.getElementById("summary-container").style.display = "none";
-        document.getElementById("setup-container").style.display = "none";
-        document.getElementById("lobby-container").style.display = "none";
-        document.getElementById("player-join-container").style.display = "none";
-        document.getElementById("player-game-container").style.display = "none";
-        document.getElementById("quiz-container").style.display = "none";
-        document.getElementById("live-stats").style.display = "none";
-        document.getElementById("lifeline-bar").style.display = "none";
-        document.getElementById("timer-bar-container").style.display = "none";
-        document.getElementById("menu-container").style.display = "block";
-    }
-
-    function addNewQuestionToStorage() {
-        var track = document.getElementById("q-track").value;
-        var topic = document.getElementById("q-topic").value.trim() || "Custom / مخصص";
-        var husaryCode = document.getElementById("q-husary-code").value.trim();
-        var husaryLabel = document.getElementById("q-husary-label").value.trim();
-        var textEn = document.getElementById("q-text-en").value.trim();
-        var textAr = document.getElementById("q-text-ar").value.trim();
-        
-        var opts = [
-            { en: document.getElementById("opt-en-0").value.trim(), ar: document.getElementById("opt-ar-0").value.trim() },
-            { en: document.getElementById("opt-en-1").value.trim(), ar: document.getElementById("opt-ar-1").value.trim() },
-            { en: document.getElementById("opt-en-2").value.trim(), ar: document.getElementById("opt-ar-2").value.trim() },
-            { en: document.getElementById("opt-en-3").value.trim(), ar: document.getElementById("opt-ar-3").value.trim() }
-        ];
-        var correct = parseInt(document.getElementById("q-correct").value, 10);
-        var exp = document.getElementById("q-exp").value.trim();
-
-        var hasAllOptions = opts.every(function(o) { return o.en.length > 0 && o.ar.length > 0; });
-
-        if (!textEn || !textAr || !hasAllOptions) {
-            alert("Please fill in both English and Arabic question fields AND all 4 bilingual options!");
-            return;
-        }
-        var newQ = {
-            topic: topic,
-            husaryCode: (husaryCode.length === 6) ? husaryCode : "",
-            husaryLabel: husaryLabel || "",
-            qEn: textEn,
-            qAr: textAr,
-            options: opts,
-            correct: correct,
-            explanation: exp || "No explanation / لا توجد ملاحظة."
-        };
-
-        if (isFirebaseReady && firebaseDb) {
-            firebaseDb.ref("customQuestions/" + track).push(newQ);
-        } else {
-            var stored = JSON.parse(localStorage.getItem("tajweed_duallang_" + track) || "[]");
-            stored.push(newQ);
-            localStorage.setItem("tajweed_duallang_" + track, JSON.stringify(stored));
-        }
-
-        var enabled = getEnabledTopicsForLevel(track);
-        if (enabled.indexOf(topic) === -1) {
-            enabled.push(topic);
-            saveEnabledTopicsForLevel(track, enabled);
-        } else {
-            updateLevelMenuBadges();
-        }
-
-        document.getElementById("manage-track-select").value = track;
-        document.getElementById("topic-filter-track").value = track;
-        renderCustomQuestionsList();
-        renderTopicSelectorForLevel();
-        showAdminAlert("Dual-language question saved & synced to Firebase Cloud!");
-        document.getElementById("q-text-en").value = ""; document.getElementById("q-text-ar").value = "";
-        document.getElementById("q-topic").value = ""; document.getElementById("q-husary-code").value = "";
-        document.getElementById("q-husary-label").value = "";
-        for(var i=0; i<4; i++) { document.getElementById("opt-en-"+i).value = ""; document.getElementById("opt-ar-"+i).value = ""; }
-        document.getElementById("q-exp").value = "";
-    }
-
-    function showAdminAlert(msg) {
-        var alertEl = document.getElementById("admin-alert");
-        alertEl.textContent = msg; alertEl.style.display = "block";
-        setTimeout(function() { alertEl.style.display = "none"; }, 2500);
-    }
+    })();
 })();
 </script>
-
 </body>
 </html>
