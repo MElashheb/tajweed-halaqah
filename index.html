@@ -1015,9 +1015,10 @@
             return;
         }
         stopHusaryAudio();
-        window.speechSynthesis && window.speechSynthesis.cancel();
+        if (window.speechSynthesis) window.speechSynthesis.cancel();
         var url = "https://everyayah.com/data/Husary_128kbps/" + surahAyahCode + ".mp3";
         husaryAudioPlayer.src = url;
+        husaryAudioPlayer.load();
         husaryAudioPlayer.play().catch(function(err) {
             console.warn("Al-Husary stream fallback to TTS:", err);
             if (fallbackArabicText) speakArabic(fallbackArabicText);
@@ -2561,6 +2562,9 @@
     function cleanupFirebaseListeners() {
         stopHusaryAudio();
         if (liveRoomRef) {
+            liveRoomRef.child("players").off();
+            liveRoomRef.child("students").off();
+            liveRoomRef.child("answers").off();
             liveRoomRef.off();
             liveRoomRef = null;
         }
@@ -2568,7 +2572,7 @@
             playerRoomRef.off();
             playerRoomRef = null;
         }
-        clearTimeout(autoAdvanceTimeout);
+        clearInterval(autoAdvanceTimeout);
         clearInterval(playerTimerInterval);
     }
 
@@ -2798,7 +2802,7 @@
     function hostPushLiveQuestion(qData) {
         if (!liveRoomRef) return;
         liveRoundResolved = false;
-        clearTimeout(autoAdvanceTimeout);
+        clearInterval(autoAdvanceTimeout);
         document.getElementById("host-indiv-podium").style.display = "none";
         document.getElementById("indiv-locked-count").textContent = "0";
 
@@ -3104,22 +3108,39 @@
             }
             var roomVal = snap.val();
             if (roomVal.roomMode === "individual") {
-                if (!enteredName) {
-                    alert("This is an Individual Student Room. Please enter your name! / أدخل اسمك للمتابعة");
-                    document.getElementById("join-team-group").style.display = "none";
-                    document.getElementById("join-student-name-group").style.display = "block";
-                    document.getElementById("join-student-name-input").focus();
-                    return;
+                var storageKey = "tajweed_stu_id_" + code;
+                var savedStudentId = sessionStorage.getItem(storageKey);
+                var existingStudent = (savedStudentId && roomVal.students && roomVal.students[savedStudentId])
+                    ? roomVal.students[savedStudentId]
+                    : null;
+
+                if (existingStudent) {
+                    playerRole = "individual";
+                    playerStudentId = savedStudentId;
+                    playerStudentName = enteredName || existingStudent.name;
+                    if (enteredName && enteredName !== existingStudent.name) {
+                        playerRoomRef.child("students/" + playerStudentId + "/name").set(enteredName);
+                    }
+                } else {
+                    if (!enteredName) {
+                        alert("This is an Individual Student Room. Please enter your name! / أدخل اسمك للمتابعة");
+                        document.getElementById("join-team-group").style.display = "none";
+                        document.getElementById("join-student-name-group").style.display = "block";
+                        document.getElementById("join-student-name-input").focus();
+                        return;
+                    }
+                    playerRole = "individual";
+                    playerStudentName = enteredName;
+                    playerStudentId = "stu_" + Math.random().toString(36).substr(2, 8);
+                    sessionStorage.setItem(storageKey, playerStudentId);
+
+                    playerRoomRef.child("students/" + playerStudentId).set({
+                        name: playerStudentName,
+                        score: 0,
+                        streak: 0,
+                        maxStreak: 0
+                    });
                 }
-                playerRole = "individual";
-                playerStudentName = enteredName;
-                playerStudentId = "stu_" + Math.random().toString(36).substr(2, 8);
-                playerRoomRef.child("students/" + playerStudentId).set({
-                    name: playerStudentName,
-                    score: 0,
-                    streak: 0,
-                    maxStreak: 0
-                });
             } else {
                 if (roomVal.players && roomVal.players["team" + teamNum]) {
                     var takeOver = confirm("Team " + teamNum + " already has a connected captain. Take over this team slot?");
@@ -3658,7 +3679,6 @@
                     return;
                 }
                 document.getElementById("pass-error-msg").style.display = "none";
-                document.getElementById("admin-pass-input").value = "";
                 document.getElementById("password-modal").style.display = "block";
                 document.getElementById("admin-email-input").focus();
             } else {
@@ -3667,25 +3687,21 @@
                 document.getElementById("game-view-container").style.display = "block";
                 document.getElementById("btn-game-view").classList.add("active");
                 document.getElementById("btn-admin-view").classList.remove("active");
-                updateLevelMenuBadges();
-                returnToMenu();
+                updateMenuSubtitle();
             }
         } else if (action === "open-player-join") {
-            openPlayerJoinView();
+            openPlayerJoinView("", null, null);
         } else if (action === "player-connect-room") {
             connectPlayerToRoom();
         } else if (action === "player-submit-answer") {
             var pIdx = parseInt(target.getAttribute("data-index"), 10);
             submitPlayerAnswer(pIdx);
         } else if (action === "player-speak-question") {
-            if (playerLatestQuestion) speakArabic(playerLatestQuestion.qAr);
+            if (playerLatestQuestion && playerLatestQuestion.qAr) speakArabic(playerLatestQuestion.qAr);
         } else if (action === "player-play-husary") {
-            if (currentPlayerHusaryCode) playHusaryAyah(currentPlayerHusaryCode, playerLatestQuestion ? playerLatestQuestion.qAr : "");
-        } else if (action === "host-play-husary") {
-            var qCur = activePath[currentQuestion];
-            if (currentHostHusaryCode) playHusaryAyah(currentHostHusaryCode, qCur ? qCur.qAr : "");
-        } else if (action === "stop-husary") {
-            stopHusaryAudio();
+            if (currentPlayerHusaryCode) {
+                playHusaryAyah(currentPlayerHusaryCode, playerLatestQuestion ? playerLatestQuestion.qAr : "");
+            }
         } else if (action === "player-speak-option") {
             var pOptIdx = parseInt(target.getAttribute("data-index"), 10);
             if (playerLatestQuestion && playerLatestQuestion.options[pOptIdx]) {
@@ -3697,56 +3713,33 @@
             document.getElementById("mode-card-live").classList.toggle("selected", selectedPlayMode === "live");
             document.getElementById("mode-card-individual").classList.toggle("selected", selectedPlayMode === "individual");
 
-            var isLiveAny = (selectedPlayMode === "live" || selectedPlayMode === "individual");
+            var isAnyLive = (selectedPlayMode === "live" || selectedPlayMode === "individual");
+            document.getElementById("live-setup-options").style.display = isAnyLive ? "block" : "none";
             document.getElementById("team-names-inputs").style.display = (selectedPlayMode === "individual") ? "none" : "block";
-            document.getElementById("live-setup-options").style.display = isLiveAny ? "block" : "none";
-            document.getElementById("btn-start-match").textContent = isLiveAny
-                ? "Create Live Room & QR Code / إنشاء غرفة ورمز QR →"
-                : "Start Challenge Now / ابدأ التحدي الآن →";
             updateFirebaseStatusBadges();
         } else if (action === "copy-team-link") {
             var tNum = target.getAttribute("data-team");
             var baseUrl = getCleanGameUrl();
-            var fullLink = (tNum === "solo")
-                ? (baseUrl + "?room=" + liveRoomCode + "&mode=individual")
-                : (baseUrl + "?room=" + liveRoomCode + "&team=" + tNum);
+            var joinLink = "";
+            var labelMsg = "";
+            if (tNum === "solo") {
+                joinLink = baseUrl + "?room=" + liveRoomCode + "&mode=individual";
+                labelMsg = "✅ Copied Individual Student Join Link!";
+            } else {
+                joinLink = baseUrl + "?room=" + liveRoomCode + "&team=" + tNum;
+                labelMsg = "✅ Copied Team " + tNum + " Captain Join Link!";
+            }
             var toast = document.getElementById("copy-link-toast");
-            var labelText = (tNum === "solo")
-                ? "✅ Copied Student Join Link!"
-                : ("✅ Copied Team " + tNum + " Link!");
-            copyTextSafely(fullLink, toast, labelText);
+            copyTextSafely(joinLink, toast, labelMsg);
         } else if (action === "host-launch-live-match") {
             hostStartLiveMatchFromLobby();
-        } else if (action === "save-firebase-config") {
-            var rawJson = document.getElementById("set-firebase-config").value.trim();
-            try {
-                var cleaned = rawJson.replace(/^[^{]*/, "").replace(/[^}]*$/, "");
-                var cfgObj = JSON.parse(cleaned);
-                if (!cfgObj.databaseURL || !cfgObj.apiKey) {
-                    alert("Config must include both 'apiKey' and 'databaseURL'!");
-                    return;
-                }
-                localStorage.setItem("tajweed_firebase_config", JSON.stringify(cfgObj));
-                initFirebaseFromConfig(cfgObj);
-                updateFirebaseStatusBadges();
-                showAdminAlert("Firebase configuration saved & connected!");
-            } catch (err) {
-                alert("Invalid JSON format. Please copy the JSON object from Firebase Project Settings.");
+        } else if (action === "host-play-husary") {
+            if (currentHostHusaryCode) {
+                var qObj = activePath[currentQuestion];
+                playHusaryAyah(currentHostHusaryCode, qObj ? qObj.qAr : "");
             }
-        } else if (action === "select-all-topics") {
-            var lvlAll = document.getElementById("topic-filter-track").value;
-            var allNames = getUniqueTopicsWithCounts(lvlAll).map(function(item) { return item.topic; });
-            saveEnabledTopicsForLevel(lvlAll, allNames);
-            renderTopicSelectorForLevel();
-            showAdminAlert("All topics enabled for this level!");
-        } else if (action === "deselect-all-topics") {
-            var lvlNone = document.getElementById("topic-filter-track").value;
-            var allList = getUniqueTopicsWithCounts(lvlNone);
-            if (allList.length > 0) {
-                saveEnabledTopicsForLevel(lvlNone, [allList[0].topic]);
-                renderTopicSelectorForLevel();
-                showAdminAlert("Cleared all except first topic (at least 1 topic required).");
-            }
+        } else if (action === "stop-husary") {
+            stopHusaryAudio();
         } else if (action === "toggle-mute") {
             isMuted = !isMuted;
             target.textContent = isMuted ? "🔇 SFX Off" : "🔊 SFX On";
@@ -3763,47 +3756,70 @@
             var ruleKey = target.getAttribute("data-rule");
             var sample = tajweedLabSamples[ruleKey];
             if (sample) {
+                currentLabSample = sample;
                 document.getElementById("tajweed-rule-display").innerHTML = sample.html;
                 document.getElementById("tajweed-rule-note").textContent = sample.note;
-                currentLabSample = sample;
-                playHusaryAyah(sample.husaryCode, sample.tts);
             }
         } else if (action === "speak-lab-sample") {
-            playHusaryAyah(currentLabSample.husaryCode, currentLabSample.tts);
-        } else if (action === "speak-question") {
-            var qData = activePath[currentQuestion];
-            if (qData) speakArabic(qData.qAr);
-        } else if (action === "speak-option") {
-            var optIdx = parseInt(target.getAttribute("data-index"), 10);
-            var qDataOpt = activePath[currentQuestion];
-            if (qDataOpt && qDataOpt.options[optIdx]) speakArabic(qDataOpt.options[optIdx].ar);
-        } else if (action === "use-5050") {
-            useFiftyFiftyLifeline();
-        } else if (action === "use-extra-time") {
-            useExtraTimeLifeline();
-        } else if (action === "toggle-fullscreen") {
-            var card = document.querySelector(".game-card");
-            if (!document.fullscreenElement && !document.webkitFullscreenElement && !isCssFullscreenActive) {
-                var docElem = document.documentElement;
-                if (docElem.requestFullscreen) {
-                    docElem.requestFullscreen().catch(function() { enableCssFullscreen(card); });
-                } else if (docElem.webkitRequestFullscreen) {
-                    docElem.webkitRequestFullscreen();
+            if (currentLabSample) {
+                if (currentLabSample.husaryCode) {
+                    playHusaryAyah(currentLabSample.husaryCode, currentLabSample.tts);
                 } else {
-                    enableCssFullscreen(card);
-                }
-            } else {
-                if (document.fullscreenElement || document.webkitFullscreenElement) {
-                    if (document.exitFullscreen) document.exitFullscreen();
-                    else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
-                } else if (isCssFullscreenActive) {
-                    disableCssFullscreen(card);
+                    speakArabic(currentLabSample.tts);
                 }
             }
+        } else if (action === "use-5050") {
+            if (selectedPlayMode !== "local" || !lifelines[activeTeam].fiftyFifty) return;
+            var qData50 = activePath[currentQuestion];
+            var optButtons = document.querySelectorAll("#options .opt-btn");
+            var wrongIndices = [];
+            for (var i = 0; i < optButtons.length; i++) {
+                if (i !== qData50.correct && !optButtons[i].disabled) wrongIndices.push(i);
+            }
+            if (wrongIndices.length >= 2) {
+                shuffleArray(wrongIndices);
+                var toHide = wrongIndices.slice(0, 2);
+                for (var h = 0; h < toHide.length; h++) {
+                    optButtons[toHide[h]].disabled = true;
+                    optButtons[toHide[h]].style.opacity = "0.35";
+                    optButtons[toHide[h]].style.textDecoration = "line-through";
+                }
+                lifelines[activeTeam].fiftyFifty = false;
+                updateLifelineButtonsUI();
+                playSound('tick');
+            }
+        } else if (action === "use-extra-time") {
+            if (selectedPlayMode !== "local" || !lifelines[activeTeam].extraTime) return;
+            timeLeft += 15;
+            timeLimit += 15;
+            document.getElementById("timer-display").textContent = "⏱️ " + timeLeft + "s";
+            document.getElementById("timer-display").classList.remove("timer-danger");
+            lifelines[activeTeam].extraTime = false;
+            updateLifelineButtonsUI();
+            playSound('tick');
         } else if (action === "open-rules") {
             document.getElementById("rules-modal").style.display = "block";
         } else if (action === "close-rules") {
             document.getElementById("rules-modal").style.display = "none";
+        } else if (action === "toggle-fullscreen") {
+            var card = document.querySelector(".game-card");
+            if (!document.fullscreenElement && !isCssFullscreenActive) {
+                if (document.documentElement.requestFullscreen) {
+                    document.documentElement.requestFullscreen().catch(function() {
+                        isCssFullscreenActive = true;
+                        card.style.maxWidth = "98vw";
+                    });
+                } else {
+                    isCssFullscreenActive = true;
+                    card.style.maxWidth = "98vw";
+                }
+            } else {
+                if (document.fullscreenElement && document.exitFullscreen) {
+                    document.exitFullscreen().catch(function() {});
+                }
+                isCssFullscreenActive = false;
+                card.style.maxWidth = "880px";
+            }
         } else if (action === "submit-password") {
             verifyPassword();
         } else if (action === "google-signin-admin") {
@@ -3815,226 +3831,242 @@
                     document.getElementById("game-view-container").style.display = "block";
                     document.getElementById("btn-game-view").classList.add("active");
                     document.getElementById("btn-admin-view").classList.remove("active");
-                    returnToMenu();
                 });
             }
         } else if (action === "cancel-password") {
             document.getElementById("password-modal").style.display = "none";
             document.getElementById("admin-pass-input").value = "";
-            document.getElementById("pass-error-msg").style.display = "none";
         } else if (action === "choose-path") {
             currentPathName = target.getAttribute("data-path");
             document.getElementById("menu-container").style.display = "none";
             document.getElementById("setup-container").style.display = "block";
             updateFirebaseStatusBadges();
         } else if (action === "start-game") {
-            var t1Input = document.getElementById("input-team1").value.trim();
-            var t2Input = document.getElementById("input-team2").value.trim();
-            if (t1Input) team1Name = t1Input;
-            if (t2Input) team2Name = t2Input;
+            team1Name = document.getElementById("input-team1").value.trim() || "Team 1";
+            team2Name = document.getElementById("input-team2").value.trim() || "Team 2";
             document.getElementById("lbl-team1").textContent = team1Name;
             document.getElementById("lbl-team2").textContent = team2Name;
 
             if (selectedPlayMode === "live" || selectedPlayMode === "individual") {
                 hostCreateLiveLobby();
             } else {
-                startLocalGame();
+                startGame();
             }
+        } else if (action === "speak-question") {
+            var qData = activePath[currentQuestion];
+            if (qData && qData.qAr) speakArabic(qData.qAr);
+        } else if (action === "speak-option") {
+            var optIndex = parseInt(target.getAttribute("data-index"), 10);
+            var qObj = activePath[currentQuestion];
+            if (qObj && qObj.options[optIndex]) speakArabic(qObj.options[optIndex].ar);
+        } else if (action === "check-answer") {
+            if (selectedPlayMode !== "local") return;
+            var optIndex = parseInt(target.getAttribute("data-index"), 10);
+            checkAnswer(optIndex);
+        } else if (action === "trigger-transfer") {
+            isTransferPhase = true;
+            activeTeam = (activeTeam === 1) ? 2 : 1;
+            var newActiveTeamName = (activeTeam === 1) ? team1Name : team2Name;
+            document.getElementById("transfer-btn").style.display = "none";
+            document.getElementById("reveal-btn").style.display = "none";
+            document.getElementById("feedback").style.display = "none";
+            document.getElementById("turn-banner").textContent = "🔄 Transferred Question: " + newActiveTeamName + "'s Turn! / تحويل السؤال";
+            document.getElementById("turn-banner").style.background = "#fef3c7";
+            document.getElementById("turn-banner").style.color = "#92400e";
+            updateTurnHighlight();
+            updateLifelineButtonsUI();
+            var buttons = document.querySelectorAll("#options .opt-btn");
+            for (var b = 0; b < buttons.length; b++) {
+                if (!buttons[b].getAttribute("data-wrong") && buttons[b].style.opacity !== "0.35") {
+                    buttons[b].disabled = false;
+                }
+            }
+            startTimer();
+        } else if (action === "reveal-answer") {
+            var qDataRev = activePath[currentQuestion];
+            var buttonsRev = document.querySelectorAll("#options .opt-btn");
+            document.getElementById("transfer-btn").style.display = "none";
+            document.getElementById("reveal-btn").style.display = "none";
+            highlightCorrectAnswer(qDataRev, buttonsRev);
+            recordMatchQuestion(qDataRev, false, "Skipped / Revealed");
+            setFeedbackMessage(document.getElementById("feedback"), false, "👁️ Answer Revealed", null, qDataRev.explanation);
+            showNextButton();
         } else if (action === "next") {
             clearInterval(autoAdvanceTimeout);
             nextQuestion();
         } else if (action === "restart") {
-            returnToMenu();
-        } else if (action === "answer") {
-            var idx = parseInt(target.getAttribute("data-index"), 10);
-            selectAnswer(idx, target);
-        } else if (action === "trigger-transfer") {
-            startTransferPhase();
-        } else if (action === "reveal-answer") {
-            revealAndSkip();
+            restartGame();
         } else if (action === "refresh-leaderboard") {
             fetchLiveLeaderboard();
         } else if (action === "print-certificate") {
             window.print();
         } else if (action === "export-match-report") {
-            exportMatchSummaryReport();
+            exportMatchReport();
+        } else if (action === "save-firebase-config") {
+            var rawCfg = document.getElementById("set-firebase-config").value.trim();
+            try {
+                var parsed = JSON.parse(rawCfg);
+                if (!parsed.databaseURL || !parsed.apiKey) {
+                    alert("Config must contain both 'apiKey' and 'databaseURL'.");
+                    return;
+                }
+                localStorage.setItem("tajweed_firebase_config", JSON.stringify(parsed));
+                var ok = initFirebaseFromConfig(parsed);
+                updateFirebaseStatusBadges();
+                if (ok) showAdminAlert("🔥 Firebase Connected Successfully!");
+                else alert("Could not initialize Firebase with the provided JSON.");
+            } catch (err) {
+                alert("Invalid JSON format. Please paste the exact firebaseConfig object.");
+            }
         } else if (action === "save-settings") {
-            var publicUrlVal = document.getElementById("set-public-game-url").value.trim();
-            if (publicUrlVal) {
-                localStorage.setItem("tajweed_public_game_url", publicUrlVal);
+            var publicUrl = document.getElementById("set-public-game-url").value.trim();
+            if (publicUrl && publicUrl.indexOf("http") === 0) {
+                localStorage.setItem("tajweed_public_game_url", publicUrl.split("?")[0]);
             }
             localStorage.setItem("tajweed_easy_time", document.getElementById("set-easy-time").value);
             localStorage.setItem("tajweed_adv_time", document.getElementById("set-adv-time").value);
             localStorage.setItem("tajweed_exp_time", document.getElementById("set-exp-time").value);
             localStorage.setItem("tajweed_q_count", document.getElementById("set-q-count").value);
-            updateMenuSubtitle();
-            showAdminAlert("Match & URL settings saved successfully!");
+            showAdminAlert("Settings saved! / تم حفظ الإعدادات بنجاح!");
+        } else if (action === "select-all-topics") {
+            var lvlSel = document.getElementById("topic-filter-track").value;
+            var allT = getUniqueTopicsWithCounts(lvlSel).map(function(i) { return i.topic; });
+            saveEnabledTopicsForLevel(lvlSel, allT);
+            renderTopicSelectorForLevel();
+            showAdminAlert("All topics selected for this level!");
+        } else if (action === "deselect-all-topics") {
+            var lvlDesel = document.getElementById("topic-filter-track").value;
+            var firstTopic = getUniqueTopicsWithCounts(lvlDesel)[0];
+            if (firstTopic) {
+                saveEnabledTopicsForLevel(lvlDesel, [firstTopic.topic]);
+                renderTopicSelectorForLevel();
+                showAdminAlert("Cleared topics (kept 1 minimum active topic).");
+            }
         } else if (action === "add-question") {
-            addNewQuestionToStorage();
+            addCustomQuestion();
         } else if (action === "delete-custom-q") {
-            var delTrack = target.getAttribute("data-track");
-            var delIndex = parseInt(target.getAttribute("data-qindex"), 10);
+            var tr = target.getAttribute("data-track");
+            var idx = parseInt(target.getAttribute("data-qindex"), 10);
             var fbKey = target.getAttribute("data-fbkey");
-
             if (isFirebaseReady && firebaseDb && fbKey) {
-                firebaseDb.ref("customQuestions/" + delTrack + "/" + fbKey).remove();
-            } else {
-                var stored = JSON.parse(localStorage.getItem("tajweed_duallang_" + delTrack) || "[]");
-                stored.splice(delIndex, 1);
-                localStorage.setItem("tajweed_duallang_" + delTrack, JSON.stringify(stored));
-                if (isFirebaseReady && firebaseDb) {
-                    firebaseDb.ref("customQuestions/" + delTrack).set(stored);
-                }
+                firebaseDb.ref("customQuestions/" + tr + "/" + fbKey).remove();
+            }
+            var arr = JSON.parse(localStorage.getItem("tajweed_duallang_" + tr) || "[]");
+            if (idx >= 0 && idx < arr.length) {
+                arr.splice(idx, 1);
+                localStorage.setItem("tajweed_duallang_" + tr, JSON.stringify(arr));
             }
             renderCustomQuestionsList();
             renderTopicSelectorForLevel();
             updateLevelMenuBadges();
-            showAdminAlert("Custom question deleted from cloud.");
-        } else if (action === "export-questions") {
-            var exportData = {
-                easy: getAllCombinedQuestionsForLevel("easy").slice(dualLanguagePaths.easy.length),
-                advanced: getAllCombinedQuestionsForLevel("advanced").slice(dualLanguagePaths.advanced.length),
-                expert: getAllCombinedQuestionsForLevel("expert").slice(dualLanguagePaths.expert.length)
-            };
-            var dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportData, null, 2));
-            var dlAnchor = document.createElement('a');
-            dlAnchor.setAttribute("href", dataStr);
-            dlAnchor.setAttribute("download", "tajweed_cloud_custom_questions.json");
-            document.body.appendChild(dlAnchor); dlAnchor.click(); dlAnchor.remove();
-            showAdminAlert("Backup exported successfully!");
+            showAdminAlert("Question deleted & synced! / تم حذف السؤال!");
         } else if (action === "sync-google-sheet-questions") {
             loadQuestionsFromGoogleSheet(true);
+        } else if (action === "export-questions") {
+            exportCustomQuestions();
+        } else if (action === "trigger-import") {
+            document.getElementById("import-file-input").click();
+        } else if (action === "import-pasted-json") {
+            var pastedRaw = document.getElementById("bulk-json-paste-input").value;
+            processBulkJsonImport(pastedRaw);
         } else if (action === "copy-ai-json-prompt") {
-            var aiPrompt = [
-                "Generate 30 bilingual (English & Arabic) Tajweed multiple-choice questions divided into 'easy' (10), 'advanced' (10), and 'expert' (10) in valid JSON format ONLY (no markdown outside JSON).",
-                "Follow this exact schema:",
-                '{',
-                '  "easy": [',
-                '    {',
-                '      "topic": "Qalqalah / القلقلة",',
-                '      "husaryCode": "112002",',
-                '      "husaryLabel": "Surah Al-Ikhlas 112:2 — اللَّهُ الصَّمَدُ",',
-                '      "qEn": "Which Qalqalah grade occurs on Dal in (اللَّهُ الصَّمَدُ) when stopping?",',
-                '      "qAr": "ما مرتبة القلقلة في حرف الدال عند الوقف على (اللَّهُ الصَّمَدُ)؟",',
-                '      "options": [',
-                '        { "en": "Qalqalah Kubra", "ar": "قلقلة كبرى" },',
-                '        { "en": "Qalqalah Sughra", "ar": "قلقلة صغرى" },',
-                '        { "en": "No Qalqalah", "ar": "لا قلقلة" },',
-                '        { "en": "Ghunnah", "ar": "غنة" }',
-                '      ],',
-                '      "correct": 0,',
-                '      "explanation": "Stopping on a non-doubled Qalqalah letter at the end of a word produces Qalqalah Kubra. / الوقف على حرف القلقلة غير المشدد يوجب القلقلة الكبرى."',
-                '    }',
-                '  ],',
-                '  "advanced": [],',
-                '  "expert": []',
-                '}',
-                "Rules: 'husaryCode' must be a 6-digit SSSAAA code (3-digit Surah + 3-digit Ayah, e.g., 112002) for listening questions or '' for text-only questions. 'correct' is 0-3."
-            ].join("\n");
-            copyTextSafely(aiPrompt, document.getElementById("json-prompt-toast"), "✅ AI Bulk-Generate Prompt copied! Paste it into Gemini/ChatGPT to generate your JSON pack.");
+            var aiPrompt =
+                "Generate 15 bilingual (English + Arabic with full Harakat tashkeel) Tajweed quiz questions in valid JSON format for my Tajweed Halaqah app. " +
+                "Return ONLY raw JSON (no markdown fences) matching this exact schema:\n" +
+                "{\n" +
+                "  \"easy\": [\n" +
+                "    {\n" +
+                "      \"topic\": \"Topic Name EN / اسم الموضوع\",\n" +
+                "      \"husaryCode\": \"\",\n" +
+                "      \"husaryLabel\": \"\",\n" +
+                "      \"qEn\": \"English question text?\",\n" +
+                "      \"qAr\": \"نص السؤال بالعربية مع التشكيل؟\",\n" +
+                "      \"options\": [\n" +
+                "        { \"en\": \"Option 1 EN\", \"ar\": \"الخيار الأول\" },\n" +
+                "        { \"en\": \"Option 2 EN\", \"ar\": \"الخيار الثاني\" },\n" +
+                "        { \"en\": \"Option 3 EN\", \"ar\": \"الخيار الثالث\" },\n" +
+                "        { \"en\": \"Option 4 EN\", \"ar\": \"الخيار الرابع\" }\n" +
+                "      ],\n" +
+                "      \"correct\": 0,\n" +
+                "      \"explanation\": \"Clear English explanation. / شرح مختصر بالعربية.\"\n" +
+                "    }\n" +
+                "  ],\n" +
+                "  \"advanced\": [],\n" +
+                "  \"expert\": []\n" +
+                "}\n" +
+                "Note: Distribute 5 questions in 'easy', 5 in 'advanced', and 5 in 'expert'. For Qur'anic listening questions, optionally set 'husaryCode' to a 6-digit SSSAAA code (e.g., '112001' for Surah 112 Ayah 1) and 'husaryLabel' to the verse reference; otherwise leave both as empty strings \"\".";
+            copyTextSafely(aiPrompt, document.getElementById("json-prompt-toast"), "✅ Copied AI Prompt! Paste into ChatGPT/Gemini, then paste the JSON below.");
         } else if (action === "download-json-template") {
-            var templateObj = {
+            var sampleTemplate = {
                 easy: [
                     {
                         topic: "Qalqalah / القلقلة",
                         husaryCode: "112002",
                         husaryLabel: "Surah Al-Ikhlas 112:2 — اللَّهُ الصَّمَدُ",
-                        qEn: "Which Qalqalah grade occurs on the Dal in (اللَّهُ الصَّمَدُ) when stopping?",
-                        qAr: "ما مرتبة القلقلة في حرف الدال عند الوقف على (اللَّهُ الصَّمَدُ)؟",
+                        qEn: "Listen to Surah Al-Ikhlas (112:2). What Tajweed rule occurs on the final Dal (دْ) when stopping?",
+                        qAr: "استمع لآية (اللَّهُ الصَّمَدُ). ما الحكم التجويدي في حرف الدال عند الوقف؟",
                         options: [
-                            { en: "Qalqalah Kubra", ar: "قلقلة كبرى" },
-                            { en: "Qalqalah Sughra", ar: "قلقلة صغرى" },
-                            { en: "No Qalqalah", ar: "لا قلقلة" },
-                            { en: "Ghunnah", ar: "غنة" }
+                            { en: "Qalqalah Kubra (Major bounce)", ar: "قلقلة كبرى" },
+                            { en: "Izhar Halqi", ar: "إظهار حلقي" },
+                            { en: "Iqlab", ar: "إقلاب" },
+                            { en: "Madd Tabii", ar: "مد طبيعي" }
                         ],
                         correct: 0,
-                        explanation: "Stopping on a non-doubled Qalqalah letter produces Qalqalah Kubra. / الوقف على حرف القلقلة غير المشدد يوجب القلقلة الكبرى."
+                        explanation: "Dal (د) is a Qalqalah letter (قطب جد) and receives Qalqalah Kubra when stopped upon. / الدال من حروف القلقلة وتُقلقل قلقلة كبرى عند الوقف."
                     }
                 ],
                 advanced: [],
                 expert: []
             };
-            var tplStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(templateObj, null, 2));
-            var tplAnchor = document.createElement("a");
-            tplAnchor.setAttribute("href", tplStr);
-            tplAnchor.setAttribute("download", "tajweed_bulk_template.json");
-            document.body.appendChild(tplAnchor);
-            tplAnchor.click();
-            tplAnchor.remove();
-            showAdminAlert("Sample JSON template downloaded!");
-        } else if (action === "import-pasted-json") {
-            var pastedVal = document.getElementById("bulk-json-paste-input").value;
-            processBulkJsonImport(pastedVal);
-            document.getElementById("bulk-json-paste-input").value = "";
-        } else if (action === "trigger-import") {
-            document.getElementById("import-file-input").click();
+            var tplBlob = new Blob([JSON.stringify(sampleTemplate, null, 2)], { type: "application/json" });
+            var tplUrl = URL.createObjectURL(tplBlob);
+            var tplA = document.createElement("a");
+            tplA.href = tplUrl;
+            tplA.download = "tajweed_bulk_template.json";
+            tplA.click();
+            URL.revokeObjectURL(tplUrl);
         }
     });
 
-    function enableCssFullscreen(card) {
-        isCssFullscreenActive = true;
-        card.style.position = "fixed";
-        card.style.top = "0";
-        card.style.left = "0";
-        card.style.width = "100vw";
-        card.style.height = "100vh";
-        card.style.maxWidth = "none";
-        card.style.borderRadius = "0";
-        card.style.zIndex = "99999";
-        card.style.overflowY = "auto";
-        card.style.boxSizing = "border-box";
-    }
-
-    function disableCssFullscreen(card) {
-        isCssFullscreenActive = false;
-        card.style.position = "static";
-        card.style.width = "auto";
-        card.style.height = "auto";
-        card.style.maxWidth = "880px";
-        card.style.borderRadius = "12px";
-        card.style.zIndex = "1";
-        card.style.overflowY = "visible";
-    }
-
     function shuffleArray(array) {
-        var currentIndex = array.length, temporaryValue, randomIndex;
-        while (0 !== currentIndex) {
-            randomIndex = Math.floor(Math.random() * currentIndex);
-            currentIndex -= 1;
-            temporaryValue = array[currentIndex];
-            array[currentIndex] = array[randomIndex];
-            array[randomIndex] = temporaryValue;
+        for (var i = array.length - 1; i > 0; i--) {
+            var j = Math.floor(Math.random() * (i + 1));
+            var temp = array[i];
+            array[i] = array[j];
+            array[j] = temp;
         }
-        return array;
     }
 
-    function startLocalGame() {
-        cleanupFirebaseListeners();
+    function updateLifelineButtonsUI() {
+        var btn50 = document.getElementById("btn-lifeline-5050");
+        var btnTime = document.getElementById("btn-lifeline-time");
+        btn50.disabled = !lifelines[activeTeam].fiftyFifty;
+        btnTime.disabled = !lifelines[activeTeam].extraTime;
+    }
+
+    function startGame() {
         buildQuestionPool();
-        
         currentQuestion = 0; score1 = 0; score2 = 0; streak1 = 0; streak2 = 0; maxStreak1 = 0; maxStreak2 = 0;
-        activeTeam = 1; isTransferPhase = false; matchHistory = [];
+        activeTeam = 1;
+        matchHistory = [];
         lifelines = {
             1: { fiftyFifty: true, extraTime: true },
             2: { fiftyFifty: true, extraTime: true }
         };
-
-        document.getElementById("host-room-pill").style.display = "none";
+        
+        updateScoresUI();
+        updateLifelineButtonsUI();
         document.getElementById("t1-live-status").textContent = "";
         document.getElementById("t2-live-status").textContent = "";
         document.getElementById("t1-box").style.display = "block";
         document.getElementById("t2-box").style.display = "block";
         document.getElementById("indiv-stats-box").style.display = "none";
-        document.getElementById("host-indiv-podium").style.display = "none";
-
-        updateScoresUI();
+        document.getElementById("host-room-pill").style.display = "none";
         document.getElementById("setup-container").style.display = "none";
-        document.getElementById("summary-container").style.display = "none";
         document.getElementById("quiz-container").style.display = "block";
         document.getElementById("live-stats").style.display = "flex";
         document.getElementById("lifeline-bar").style.display = "flex";
         document.getElementById("timer-bar-container").style.display = "block";
-
         loadQuestion();
     }
 
@@ -4043,180 +4075,160 @@
         document.getElementById("score2").textContent = score2;
         document.getElementById("streak1").textContent = streak1;
         document.getElementById("streak2").textContent = streak2;
-
-        var t1Box = document.getElementById("t1-box");
-        var t2Box = document.getElementById("t2-box");
-        var banner = document.getElementById("turn-banner");
-        var currentTeamName = (activeTeam === 1) ? team1Name : team2Name;
-
-        if (selectedPlayMode === "individual") {
-            banner.textContent = "👤 Individual Student Mode — All Students Answering on Their Devices!";
-            banner.style.background = "#ede9fe";
-            banner.style.color = "#5b21b6";
-            return;
-        }
-
-        if (selectedPlayMode === "live") {
-            t1Box.classList.add("active-turn");
-            t2Box.classList.add("active-turn");
-            banner.textContent = "🌐 Live Zoom Breakout Room Mode — Both Teams Answering Simultaneously!";
-            banner.style.background = "#dbeafe";
-            banner.style.color = "#1e40af";
-            return;
-        }
-
-        if (activeTeam === 1) { t1Box.classList.add("active-turn"); t2Box.classList.remove("active-turn"); }
-        else { t2Box.classList.add("active-turn"); t1Box.classList.remove("active-turn"); }
-
-        var btn5050 = document.getElementById("btn-lifeline-5050");
-        var btnTime = document.getElementById("btn-lifeline-time");
-        if (btn5050 && btnTime) {
-            btn5050.disabled = !lifelines[activeTeam].fiftyFifty || isTransferPhase;
-            btnTime.disabled = !lifelines[activeTeam].extraTime;
-        }
-
-        if (isTransferPhase) {
-            banner.textContent = "🔄 Transfer Phase / مرحلة التحويل! Turn / الدور: " + currentTeamName;
-            banner.style.background = "#fef3c7"; banner.style.color = "#92400e";
-        } else {
-            banner.textContent = "Turn / الدور: " + currentTeamName;
-            banner.style.background = (activeTeam === 1) ? "#e0f2fe" : "#fce7f3";
-            banner.style.color = (activeTeam === 1) ? "#0369a1" : "#be185d";
-        }
     }
 
-    function useFiftyFiftyLifeline() {
-        if (!lifelines[activeTeam].fiftyFifty || isTransferPhase) return;
-        var qData = activePath[currentQuestion];
-        var buttons = document.querySelectorAll(".opt-btn");
-        var wrongIndices = [];
-        for (var i = 0; i < buttons.length; i++) {
-            if (i !== qData.correct && !buttons[i].disabled) wrongIndices.push(i);
+    function updateTurnHighlight() {
+        if (selectedPlayMode !== "local") {
+            document.getElementById("t1-box").classList.remove("active-turn");
+            document.getElementById("t2-box").classList.remove("active-turn");
+            return;
         }
-        shuffleArray(wrongIndices);
-        var toRemove = wrongIndices.slice(0, 2);
-        for (var j = 0; j < toRemove.length; j++) {
-            var btn = buttons[toRemove[j]];
-            btn.disabled = true;
-            btn.style.opacity = "0.35";
-            btn.setAttribute("data-eliminated", "true");
-        }
-        lifelines[activeTeam].fiftyFifty = false;
-        playSound('tick');
-        updateScoresUI();
-    }
-
-    function useExtraTimeLifeline() {
-        if (!lifelines[activeTeam].extraTime) return;
-        timeLeft += 15;
-        if (timeLeft > timeLimit + 15) timeLeft = timeLimit + 15;
-        lifelines[activeTeam].extraTime = false;
-        playSound('correct');
-        updateTimerUI();
-        updateScoresUI();
+        document.getElementById("t1-box").classList.toggle("active-turn", activeTeam === 1);
+        document.getElementById("t2-box").classList.toggle("active-turn", activeTeam === 2);
     }
 
     function startTimer() {
         clearInterval(timerInterval);
+        if (currentPathName === 'easy') timeLimit = parseInt(localStorage.getItem("tajweed_easy_time") || "20", 10);
+        else if (currentPathName === 'advanced') timeLimit = parseInt(localStorage.getItem("tajweed_adv_time") || "30", 10);
+        else timeLimit = parseInt(localStorage.getItem("tajweed_exp_time") || "40", 10);
+
         timeLeft = timeLimit;
-        updateTimerUI();
+        var display = document.getElementById("timer-display");
+        var bar = document.getElementById("timer-bar");
+        display.classList.remove("timer-danger");
+        display.textContent = "⏱️ " + timeLeft + "s";
+        bar.style.width = "100%"; bar.style.background = "#2d6a4f";
+        
         timerInterval = setInterval(function() {
             timeLeft--;
-            updateTimerUI();
-            if (timeLeft <= 5 && timeLeft > 0) playSound('tick');
-            if (timeLeft <= 0) { clearInterval(timerInterval); playSound('wrong'); handleTimeOut(); }
+            display.textContent = "⏱️ " + timeLeft + "s";
+            var percentage = Math.min(100, Math.max(0, (timeLeft / timeLimit) * 100));
+            bar.style.width = percentage + "%";
+            if (timeLeft <= 5 && timeLeft > 0) {
+                display.classList.add("timer-danger");
+                bar.style.background = "#dc3545";
+                playSound('tick');
+            }
+            if (timeLeft <= 0) {
+                clearInterval(timerInterval);
+                if (selectedPlayMode === "live") {
+                    if (!liveRoomRef) return;
+                    liveRoomRef.child("answers").once("value", function(snap) {
+                        var ans = snap.val() || {};
+                        evaluateLiveSimultaneousRound(ans.team1 || null, ans.team2 || null);
+                    });
+                } else if (selectedPlayMode === "individual") {
+                    if (!liveRoomRef) return;
+                    liveRoomRef.child("answers").once("value", function(snap) {
+                        evaluateIndividualRound(snap.val() || {});
+                    });
+                } else {
+                    handleTimeout();
+                }
+            }
         }, 1000);
     }
 
-    function updateTimerUI() {
-        var timerDisplay = document.getElementById("timer-display");
-        var timerBar = document.getElementById("timer-bar");
-        timerDisplay.textContent = "⏱️ " + timeLeft + "s";
-        var pct = Math.min(100, (timeLeft / timeLimit) * 100);
-        timerBar.style.width = pct + "%";
-        if (timeLeft <= 5) timerDisplay.classList.add("timer-danger");
-        else timerDisplay.classList.remove("timer-danger");
-    }
-
-    function setFeedbackMessage(el, isCorrect, headerText, bodyText, explanationText) {
-        el.innerHTML = "";
-        el.className = isCorrect ? "feedback correct" : "feedback incorrect";
+    function handleTimeout() {
+        var qData = activePath[currentQuestion];
+        var buttons = document.querySelectorAll("#options .opt-btn");
+        var feedback = document.getElementById("feedback");
+        var activeTeamName = (activeTeam === 1) ? team1Name : team2Name;
+        playSound('wrong');
         
-        var strong = document.createElement("strong");
-        strong.textContent = headerText;
-        el.appendChild(strong);
+        if (activeTeam === 1) streak1 = 0; else streak2 = 0;
+        updateScoresUI();
 
-        if (bodyText) {
-            el.appendChild(document.createElement("br"));
-            var spanBody = document.createElement("span");
-            spanBody.textContent = bodyText;
-            el.appendChild(spanBody);
-        }
+        for (var i = 0; i < buttons.length; i++) buttons[i].disabled = true;
 
-        if (explanationText) {
-            el.appendChild(document.createElement("br"));
-            el.appendChild(document.createElement("br"));
-            var em = document.createElement("em");
-            em.textContent = "Explanation / التوضيح: ";
-            el.appendChild(em);
-            var spanExp = document.createElement("span");
-            spanExp.textContent = explanationText;
-            el.appendChild(spanExp);
+        if (!isTransferPhase) {
+            var otherTeamName = (activeTeam === 1) ? team2Name : team1Name;
+            setFeedbackMessage(feedback, false, "⏰ Time expired for " + activeTeamName + "! / انتهى الوقت!", "Transfer to " + otherTeamName + " or reveal the answer:", null);
+            document.getElementById("transfer-btn").style.display = "inline-block";
+            document.getElementById("reveal-btn").style.display = "inline-block";
+        } else {
+            highlightCorrectAnswer(qData, buttons);
+            recordMatchQuestion(qData, false, "Timed out");
+            setFeedbackMessage(feedback, false, "⏰ Time expired for both teams! / انتهى الوقت!", null, qData.explanation);
+            showNextButton();
         }
-        el.style.display = "block";
     }
 
     function loadQuestion() {
+        clearInterval(timerInterval);
         stopHusaryAudio();
+        if (window.speechSynthesis) window.speechSynthesis.cancel();
         isTransferPhase = false;
-        document.getElementById("transfer-btn").style.display = "none";
-        document.getElementById("reveal-btn").style.display = "none";
         
-        var isFinalQuestion = (currentQuestion === activePath.length - 1);
-        document.getElementById("double-pts-badge").style.display = isFinalQuestion ? "inline-block" : "none";
-
-        updateScoresUI();
         var qData = activePath[currentQuestion];
-        document.getElementById("topic").textContent = qData.topic;
+        var isFinalQuestion = (currentQuestion === activePath.length - 1);
 
+        if (selectedPlayMode === "live") {
+            document.getElementById("turn-banner").textContent = "🌐 Live Zoom 2-Team Round — Both Teams Answering Simultaneously! / جولة مباشرة للفريقين";
+            document.getElementById("turn-banner").style.background = "#e0f2fe";
+            document.getElementById("turn-banner").style.color = "#0369a1";
+            hostPushLiveQuestion(qData);
+        } else if (selectedPlayMode === "individual") {
+            document.getElementById("turn-banner").textContent = "👤 Live Individual Student Round — Everyone Answers on Their Own Screen! / جولة فردية لجميع الطلاب";
+            document.getElementById("turn-banner").style.background = "#ede9fe";
+            document.getElementById("turn-banner").style.color = "#5b21b6";
+            hostPushLiveQuestion(qData);
+        } else {
+            activeTeam = (currentQuestion % 2 === 0) ? 1 : 2;
+            var activeTeamName = (activeTeam === 1) ? team1Name : team2Name;
+            document.getElementById("turn-banner").textContent = "Current Turn: " + activeTeamName + " / دور الفريق";
+            document.getElementById("turn-banner").style.background = (activeTeam === 1) ? "#e0f2fe" : "#fce7f3";
+            document.getElementById("turn-banner").style.color = (activeTeam === 1) ? "#0369a1" : "#be185d";
+            updateLifelineButtonsUI();
+        }
+        updateTurnHighlight();
+
+        // Al-Husary Audio Card visibility
         var hostHusaryCard = document.getElementById("host-husary-card");
         if (qData.husaryCode) {
             currentHostHusaryCode = qData.husaryCode;
-            document.getElementById("host-husary-ref").textContent = qData.husaryLabel || "Listen to Shaykh Al-Husary's recitation";
+            document.getElementById("host-husary-ref").textContent = qData.husaryLabel || "Qur'anic Recitation by Shaykh Al-Husary";
             hostHusaryCard.classList.add("visible");
         } else {
             currentHostHusaryCode = null;
             hostHusaryCard.classList.remove("visible");
         }
-        
+
+        document.getElementById("double-pts-badge").style.display = isFinalQuestion ? "inline-block" : "none";
+        document.getElementById("topic").textContent = qData.topic;
         document.getElementById("q-en-text").textContent = (currentQuestion + 1) + ". " + qData.qEn;
         document.getElementById("q-ar-text").textContent = qData.qAr;
-        document.getElementById("progress").textContent = "Question " + (currentQuestion + 1) + " of " + activePath.length;
+        document.getElementById("progress").textContent = "Question " + (currentQuestion + 1) + " of " + activePath.length + " / سؤال " + (currentQuestion + 1) + " من " + activePath.length;
         
         var optContainer = document.getElementById("options");
         optContainer.innerHTML = "";
+        var feedback = document.getElementById("feedback");
+        feedback.style.display = "none"; feedback.className = "feedback";
+        document.getElementById("next-btn").style.display = "none";
+        document.getElementById("transfer-btn").style.display = "none";
+        document.getElementById("reveal-btn").style.display = "none";
+        
         for (var i = 0; i < qData.options.length; i++) {
+            var opt = qData.options[i];
             var rowDiv = document.createElement("div");
             rowDiv.className = "opt-row";
 
             var btn = document.createElement("button");
             btn.type = "button";
             btn.className = "opt-btn";
-            if (selectedPlayMode === "local") {
-                btn.setAttribute("data-action", "answer");
-                btn.setAttribute("data-index", i);
-            } else {
-                btn.disabled = true;
-            }
+            btn.setAttribute("data-action", "check-answer");
+            btn.setAttribute("data-index", i);
+            if (selectedPlayMode !== "local") btn.disabled = true;
 
             var spanEn = document.createElement("span");
             spanEn.className = "opt-en";
-            spanEn.textContent = qData.options[i].en;
+            spanEn.textContent = opt.en;
 
             var spanAr = document.createElement("span");
             spanAr.className = "opt-ar";
             spanAr.setAttribute("dir", "rtl");
-            spanAr.textContent = qData.options[i].ar;
+            spanAr.textContent = opt.ar;
 
             btn.appendChild(spanEn);
             btn.appendChild(spanAr);
@@ -4233,231 +4245,143 @@
             rowDiv.appendChild(audioBtn);
             optContainer.appendChild(rowDiv);
         }
-        document.getElementById("feedback").style.display = "none";
-        document.getElementById("next-btn").style.display = "none";
-
-        if (selectedPlayMode === "live" || selectedPlayMode === "individual") {
-            hostPushLiveQuestion(qData);
-        }
         startTimer();
     }
 
-    function highlightCorrectAnswer(qData, buttons) {
-        for (var i = 0; i < buttons.length; i++) {
-            buttons[i].disabled = true;
-            if (i === qData.correct) {
-                buttons[i].style.opacity = "1";
-                buttons[i].style.background = "#d4edda";
-                buttons[i].style.borderColor = "#28a745";
-                buttons[i].style.fontWeight = "bold";
-            }
-        }
-    }
-
-    function recordMatchQuestion(qData, wasAnsweredCorrectly, outcomeLabel) {
-        matchHistory.push({
-            number: currentQuestion + 1,
-            topic: qData.topic,
-            qEn: qData.qEn,
-            qAr: qData.qAr,
-            correctOpt: qData.options[qData.correct],
-            explanation: qData.explanation,
-            solved: wasAnsweredCorrectly,
-            outcome: outcomeLabel
-        });
-    }
-
-    function handleTimeOut() {
-        clearInterval(timerInterval);
-        if ((selectedPlayMode === "live" || selectedPlayMode === "individual") && liveRoomRef) {
-            liveRoomRef.child("answers").once("value", function(snap) {
-                var ans = snap.val() || {};
-                if (selectedPlayMode === "individual") {
-                    evaluateIndividualRound(ans);
-                } else {
-                    evaluateLiveSimultaneousRound(ans.team1 || null, ans.team2 || null);
-                }
-            });
-            return;
-        }
-
-        var qData = activePath[currentQuestion];
-        var buttons = document.querySelectorAll(".opt-btn");
-        var currentTeamName = (activeTeam === 1) ? team1Name : team2Name;
-        var feedback = document.getElementById("feedback");
-
-        if (!isTransferPhase) {
-            if (activeTeam === 1) streak1 = 0; else streak2 = 0;
-            updateScoresUI();
-            for (var i = 0; i < buttons.length; i++) { buttons[i].disabled = true; }
-            setFeedbackMessage(
-                feedback,
-                false,
-                "⏰ Time's up / انتهى الوقت لفريق " + currentTeamName + "!",
-                "You can transfer this question or reveal the answer! / يمكنك تحويل السؤال أو إظهار الإجابة!",
-                null
-            );
-            document.getElementById("transfer-btn").style.display = "inline-block";
-            document.getElementById("reveal-btn").style.display = "inline-block";
-        } else {
-            updateScoresUI();
-            highlightCorrectAnswer(qData, buttons);
-            recordMatchQuestion(qData, false, "Timed out on transfer (" + currentTeamName + ")");
-            setFeedbackMessage(
-                feedback,
-                false,
-                "⏰ Time's up on transfer too! No points. / انتهى وقت التحويل!",
-                null,
-                qData.explanation
-            );
-            showNextButton();
-        }
-    }
-
-    function selectAnswer(selectedIndex, selectedBtn) {
-        if (selectedBtn.disabled || selectedPlayMode !== "local") return;
+    function checkAnswer(selectedIndex) {
         clearInterval(timerInterval);
         var qData = activePath[currentQuestion];
+        var buttons = document.querySelectorAll("#options .opt-btn");
         var feedback = document.getElementById("feedback");
-        var buttons = document.querySelectorAll(".opt-btn");
-        var currentTeamName = (activeTeam === 1) ? team1Name : team2Name;
+        var activeTeamName = (activeTeam === 1) ? team1Name : team2Name;
         var isFinalQuestion = (currentQuestion === activePath.length - 1);
-
+        
+        for (var i = 0; i < buttons.length; i++) buttons[i].disabled = true;
+        
         if (selectedIndex === qData.correct) {
-            highlightCorrectAnswer(qData, buttons);
             playSound('correct');
-
-            var basePts = 1;
-            var speedBonus = (!isTransferPhase && timeLeft > (timeLimit * 0.5)) ? 1 : 0;
-            var streakBonus = 0;
-
+            var speedBonus = (timeLeft >= timeLimit / 2) ? 1 : 0;
+            var currentStreak = 0;
             if (activeTeam === 1) {
                 streak1++;
                 if (streak1 > maxStreak1) maxStreak1 = streak1;
-                if (streak1 >= 3) streakBonus = 1;
+                currentStreak = streak1;
             } else {
                 streak2++;
                 if (streak2 > maxStreak2) maxStreak2 = streak2;
-                if (streak2 >= 3) streakBonus = 1;
+                currentStreak = streak2;
             }
 
-            var totalEarned = basePts + speedBonus + streakBonus;
-            if (isFinalQuestion) totalEarned *= 2;
-
+            var streakBonus = (currentStreak >= 3) ? 1 : 0;
+            var totalPoints = 1 + speedBonus + streakBonus;
+            if (isFinalQuestion) totalPoints *= 2;
+            
             if (activeTeam === 1) {
-                score1 += totalEarned;
+                score1 += totalPoints;
                 syncScoreToSheet(team1Name, score1);
             } else {
-                score2 += totalEarned;
+                score2 += totalPoints;
                 syncScoreToSheet(team2Name, score2);
             }
-
-            var bonusNotes = [];
-            if (speedBonus > 0) bonusNotes.push("⚡ +1 Speed");
-            if (streakBonus > 0) bonusNotes.push("🔥 +1 Streak");
-            if (isFinalQuestion) bonusNotes.push("⭐ 2x Finale");
-            var bonusText = bonusNotes.length > 0 ? " [" + bonusNotes.join(", ") + "]" : "";
-
-            var label = (isTransferPhase ? "Stolen by " : "Solved by ") + currentTeamName + " (+" + totalEarned + " pts)";
-            recordMatchQuestion(qData, true, label);
-            setFeedbackMessage(
-                feedback,
-                true,
-                "Correct / إجابة صحيحة من " + currentTeamName + "! (+" + totalEarned + " pts" + bonusText + ")",
-                null,
-                qData.explanation
-            );
             updateScoresUI();
+            
+            buttons[selectedIndex].style.background = "#d4edda"; 
+            buttons[selectedIndex].style.borderColor = "#28a745";
+            buttons[selectedIndex].style.fontWeight = "bold";
+            
+            var titleText = "✅ Correct (" + activeTeamName + " +" + totalPoints + " pts)! / إجابة صحيحة!";
+            var tags = [];
+            if (speedBonus) tags.push("⚡ Speed Bonus");
+            if (streakBonus) tags.push("🔥 " + currentStreak + "x Streak");
+            if (isFinalQuestion) tags.push("🌟 2x Finale");
+            if (tags.length > 0) titleText += " [" + tags.join(" • ") + "]";
+
+            recordMatchQuestion(qData, true, activeTeamName + " (+" + totalPoints + " pts)");
+            setFeedbackMessage(feedback, true, titleText, null, qData.explanation);
             showNextButton();
         } else {
             playSound('wrong');
-            selectedBtn.style.background = "#f8d7da";
-            selectedBtn.style.borderColor = "#dc3545";
-            selectedBtn.setAttribute("data-eliminated", "true");
+            if (activeTeam === 1) streak1 = 0; else streak2 = 0;
+            updateScoresUI();
+
+            buttons[selectedIndex].style.background = "#f8d7da"; 
+            buttons[selectedIndex].style.borderColor = "#dc3545";
+            buttons[selectedIndex].setAttribute("data-wrong", "true");
             
             if (!isTransferPhase) {
-                if (activeTeam === 1) streak1 = 0; else streak2 = 0;
-                updateScoresUI();
-                for (var i = 0; i < buttons.length; i++) { buttons[i].disabled = true; }
-                setFeedbackMessage(
-                    feedback,
-                    false,
-                    "Incorrect / إجابة غير صحيحة من " + currentTeamName + ".",
-                    "Would you like to transfer the question or reveal the answer? / هل تريد تحويل السؤال أم إظهار الإجابة؟",
-                    null
-                );
+                var otherTeamName = (activeTeam === 1) ? team2Name : team1Name;
+                setFeedbackMessage(feedback, false, "❌ Incorrect (" + activeTeamName + ")! / إجابة خاطئة!", "Transfer to " + otherTeamName + " or reveal the answer:", null);
                 document.getElementById("transfer-btn").style.display = "inline-block";
                 document.getElementById("reveal-btn").style.display = "inline-block";
             } else {
-                updateScoresUI();
                 highlightCorrectAnswer(qData, buttons);
-                recordMatchQuestion(qData, false, "Missed on transfer by " + currentTeamName);
-                setFeedbackMessage(
-                    feedback,
-                    false,
-                    "Incorrect on transfer / إجابة غير صحيحة في التحويل.",
-                    null,
-                    qData.explanation
-                );
+                recordMatchQuestion(qData, false, "Missed by both teams");
+                setFeedbackMessage(feedback, false, "❌ Incorrect by both teams! / خطأ!", null, qData.explanation);
                 showNextButton();
             }
         }
     }
 
-    function revealAndSkip() {
-        var qData = activePath[currentQuestion];
-        var buttons = document.querySelectorAll(".opt-btn");
-        var feedback = document.getElementById("feedback");
-        document.getElementById("transfer-btn").style.display = "none";
-        document.getElementById("reveal-btn").style.display = "none";
-        highlightCorrectAnswer(qData, buttons);
-        recordMatchQuestion(qData, false, "Answer revealed (No points)");
-        setFeedbackMessage(
-            feedback,
-            false,
-            "Answer Revealed / تم إظهار الإجابة الصحيحة (No points awarded).",
-            null,
-            qData.explanation
-        );
-        showNextButton();
+    function recordMatchQuestion(qData, wasCorrect, outcomeLabel) {
+        matchHistory.push({
+            topic: qData.topic,
+            qEn: qData.qEn,
+            qAr: qData.qAr,
+            correctEn: qData.options[qData.correct].en,
+            correctAr: qData.options[qData.correct].ar,
+            explanation: qData.explanation,
+            wasCorrect: wasCorrect,
+            outcomeLabel: outcomeLabel
+        });
     }
 
-    function startTransferPhase() {
-        isTransferPhase = true;
-        activeTeam = (activeTeam === 1) ? 2 : 1;
-        document.getElementById("transfer-btn").style.display = "none";
-        document.getElementById("reveal-btn").style.display = "none";
-        document.getElementById("feedback").style.display = "none";
-        updateScoresUI();
-        var buttons = document.querySelectorAll(".opt-btn");
-        for (var i = 0; i < buttons.length; i++) {
-            if (buttons[i].getAttribute("data-eliminated") === "true") {
-                buttons[i].disabled = true;
-            } else {
-                buttons[i].disabled = false;
-                buttons[i].style.opacity = "1";
-                buttons[i].style.background = "#f8fafc";
-                buttons[i].style.borderColor = "#cbd5e1";
-                buttons[i].style.fontWeight = "normal";
-            }
+    function setFeedbackMessage(el, isCorrect, headerText, promptText, explanationText) {
+        el.innerHTML = "";
+        var strong = document.createElement("strong");
+        strong.textContent = headerText;
+        el.appendChild(strong);
+
+        if (promptText) {
+            el.appendChild(document.createElement("br"));
+            var promptSpan = document.createElement("span");
+            promptSpan.textContent = promptText;
+            el.appendChild(promptSpan);
         }
-        startTimer();
+
+        if (explanationText) {
+            el.appendChild(document.createElement("br"));
+            var expSpan = document.createElement("span");
+            expSpan.textContent = explanationText;
+            el.appendChild(expSpan);
+        }
+
+        el.className = "feedback " + (isCorrect ? "correct" : "incorrect");
+        el.style.display = "block";
+    }
+
+    function highlightCorrectAnswer(qData, buttons) {
+        buttons[qData.correct].style.background = "#d4edda"; 
+        buttons[qData.correct].style.borderColor = "#28a745";
+        buttons[qData.correct].style.fontWeight = "bold";
     }
 
     function showNextButton() {
         var nextBtn = document.getElementById("next-btn");
+        nextBtn.textContent = (currentQuestion < activePath.length - 1) ? "Next Question / السؤال التالي →" : "Final Results / النتائج النهائية →";
         nextBtn.style.display = "inline-block";
-        nextBtn.textContent = (currentQuestion < activePath.length - 1) ? "Next Question / السؤال التالي →" : "View Final Results / عرض النتائج";
     }
 
     function nextQuestion() {
         clearInterval(autoAdvanceTimeout);
         currentQuestion++;
-        activeTeam = (currentQuestion % 2 === 0) ? 1 : 2;
-        if (currentQuestion < activePath.length) loadQuestion(); else showSummary();
+        if (currentQuestion < activePath.length) {
+            loadQuestion();
+        } else {
+            showSummary();
+        }
     }
 
-    function renderMatchReview() {
+    function renderMatchReviewList() {
         var listEl = document.getElementById("match-review-list");
         listEl.innerHTML = "";
         for (var i = 0; i < matchHistory.length; i++) {
@@ -4465,76 +4389,76 @@
             var div = document.createElement("div");
             div.className = "review-item";
 
-            var headerDiv = document.createElement("div");
-            headerDiv.style.display = "flex";
-            headerDiv.style.justifyContent = "space-between";
-            headerDiv.style.alignItems = "center";
-            headerDiv.style.marginBottom = "4px";
+            var topLine = document.createElement("div");
+            topLine.style.display = "flex";
+            topLine.style.justifyContent = "space-between";
+            topLine.style.alignItems = "center";
+            topLine.style.marginBottom = "4px";
 
-            var qTitle = document.createElement("strong");
-            qTitle.textContent = "Q" + item.number + ": " + item.qEn;
+            var titleSpan = document.createElement("strong");
+            titleSpan.style.fontSize = "0.9em";
+            titleSpan.style.color = "#1e293b";
+            titleSpan.textContent = "Q" + (i + 1) + ". [" + item.topic + "]";
 
-            var badge = document.createElement("span");
-            badge.className = item.solved ? "badge-correct" : "badge-missed";
-            badge.textContent = item.outcome;
+            var badgeSpan = document.createElement("span");
+            badgeSpan.className = item.wasCorrect ? "badge-correct" : "badge-missed";
+            badgeSpan.textContent = item.outcomeLabel;
 
-            headerDiv.appendChild(qTitle);
-            headerDiv.appendChild(badge);
+            topLine.appendChild(titleSpan);
+            topLine.appendChild(badgeSpan);
 
-            var arP = document.createElement("div");
-            arP.style.color = "#0f766e";
-            arP.style.fontWeight = "bold";
-            arP.style.fontFamily = "'Amiri', serif";
-            arP.style.fontSize = "1.1em";
-            arP.textContent = item.qAr;
+            var qText = document.createElement("div");
+            qText.style.fontSize = "0.88em";
+            qText.style.color = "#334155";
+            qText.textContent = item.qEn + " (" + item.qAr + ")";
 
-            var ansP = document.createElement("div");
-            ansP.style.fontSize = "0.9em";
-            ansP.style.color = "#155724";
-            ansP.style.marginTop = "4px";
-            ansP.textContent = "✓ Answer: " + item.correctOpt.en + " (" + item.correctOpt.ar + ")";
+            var ansText = document.createElement("div");
+            ansText.style.fontSize = "0.86em";
+            ansText.style.color = "#0f766e";
+            ansText.style.fontWeight = "bold";
+            ansText.style.marginTop = "3px";
+            ansText.textContent = "✔ Correct: " + item.correctEn + " — " + item.correctAr;
 
-            div.appendChild(headerDiv);
-            div.appendChild(arP);
-            div.appendChild(ansP);
+            div.appendChild(topLine);
+            div.appendChild(qText);
+            div.appendChild(ansText);
             listEl.appendChild(div);
         }
     }
 
-    function exportMatchSummaryReport() {
-        var dateStr = new Date().toLocaleDateString();
-        var levelNames = { easy: "Level 1: Core Tajweed", advanced: "Level 2: Advanced Rules", expert: "Level 3: Expert Recitation" };
-        var scoreSummaryLine = (selectedPlayMode === "individual")
-            ? ("Mode: Individual Students (" + Object.keys(indivPlayersMap).length + " players)")
-            : (team1Name + ": " + score1 + " pts (Best Streak: " + maxStreak1 + ") | " + team2Name + ": " + score2 + " pts (Best Streak: " + maxStreak2 + ")");
-
+    function exportMatchReport() {
         var lines = [
-            "TAJWEED HALAQAH CHALLENGE - MATCH SUMMARY REPORT",
-            "Date: " + dateStr,
-            "Level: " + (levelNames[currentPathName] || currentPathName),
-            "--------------------------------------------------",
-            scoreSummaryLine,
-            "--------------------------------------------------",
-            "QUESTION REVIEW:",
-            ""
+            "TAJWEED HALAQAH CHALLENGE - MATCH REPORT",
+            "Date: " + new Date().toLocaleDateString(),
+            "Level: " + currentPathName.toUpperCase(),
+            "Mode: " + selectedPlayMode.toUpperCase(),
+            "========================================="
         ];
+        if (selectedPlayMode === "individual") {
+            var ranked = Object.keys(indivPlayersMap).map(function(id) { return indivPlayersMap[id]; })
+                .sort(function(a, b) { return (b.score || 0) - (a.score || 0); });
+            ranked.forEach(function(st, idx) {
+                lines.push("#" + (idx + 1) + " " + st.name + ": " + (st.score || 0) + " pts (Max Streak: " + (st.maxStreak || 0) + ")");
+            });
+        } else {
+            lines.push(team1Name + ": " + score1 + " pts (Max Streak: " + maxStreak1 + ")");
+            lines.push(team2Name + ": " + score2 + " pts (Max Streak: " + maxStreak2 + ")");
+        }
+        lines.push("=========================================");
         for (var i = 0; i < matchHistory.length; i++) {
-            var h = matchHistory[i];
-            lines.push("Q" + h.number + " [" + h.topic + "] - " + h.outcome);
-            lines.push("  EN: " + h.qEn);
-            lines.push("  AR: " + h.qAr);
-            lines.push("  Correct Answer: " + h.correctOpt.en + " | " + h.correctOpt.ar);
-            lines.push("  Explanation: " + h.explanation);
+            var item = matchHistory[i];
+            lines.push("Q" + (i + 1) + " [" + item.topic + "] - " + item.outcomeLabel);
+            lines.push("   Question: " + item.qEn + " | " + item.qAr);
+            lines.push("   Answer:   " + item.correctEn + " | " + item.correctAr);
+            lines.push("   Note:     " + item.explanation);
             lines.push("");
         }
         var blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
         var url = URL.createObjectURL(blob);
         var a = document.createElement("a");
         a.href = url;
-        a.download = "Tajweed_Match_Report_" + dateStr.replace(/\//g, "-") + ".txt";
-        document.body.appendChild(a);
+        a.download = "tajweed_match_report.txt";
         a.click();
-        a.remove();
         URL.revokeObjectURL(url);
     }
 
@@ -4542,150 +4466,195 @@
         clearInterval(timerInterval);
         clearInterval(autoAdvanceTimeout);
         stopHusaryAudio();
-
-        if ((selectedPlayMode === "live" || selectedPlayMode === "individual") && liveRoomRef) {
-            liveRoomRef.update({
-                status: "finished",
-                score1: score1,
-                score2: score2,
-                students: indivPlayersMap
-            });
-        }
+        if (window.speechSynthesis) window.speechSynthesis.cancel();
         document.getElementById("quiz-container").style.display = "none";
         document.getElementById("live-stats").style.display = "none";
         document.getElementById("lifeline-bar").style.display = "none";
         document.getElementById("timer-bar-container").style.display = "none";
         document.getElementById("summary-container").style.display = "block";
+        
+        var winnerBox = document.getElementById("winner-announcement");
+        var details = document.getElementById("final-details");
+        var meta = document.getElementById("match-meta-details");
+        var indivBox = document.getElementById("indiv-final-standings-box");
+        var indivList = document.getElementById("indiv-final-list");
 
-        var indivStandingsBox = document.getElementById("indiv-final-standings-box");
         if (selectedPlayMode === "individual") {
             var ranked = Object.keys(indivPlayersMap).map(function(id) { return indivPlayersMap[id]; })
                 .sort(function(a, b) { return (b.score || 0) - (a.score || 0); });
-            var topChampion = ranked.length > 0 ? ranked[0].name : "Everyone";
-            document.getElementById("winner-announcement").textContent = "🎉 Champion: " + topChampion + "! / تهانينا للفائز! 🎉";
-            document.getElementById("final-details").textContent = "Total Participants: " + ranked.length + " Students";
 
-            var finalList = document.getElementById("indiv-final-list");
-            finalList.innerHTML = "";
+            if (ranked.length > 0) {
+                winnerBox.textContent = "🏆 Champion: " + ranked[0].name + " (" + (ranked[0].score || 0) + " pts)!";
+                details.textContent = "Top 3 Students synced to Cloud Leaderboard!";
+                ranked.slice(0, 3).forEach(function(st, idx) {
+                    setTimeout(function() { syncScoreToSheet(st.name, st.score || 0); }, idx * 600);
+                });
+            } else {
+                winnerBox.textContent = "🏆 Match Completed!";
+                details.textContent = "No individual student scores recorded.";
+            }
+
+            indivBox.style.display = "block";
+            indivList.innerHTML = "";
             ranked.forEach(function(st, idx) {
-                var rDiv = document.createElement("div");
-                rDiv.className = "indiv-podium-row";
+                var row = document.createElement("div");
+                row.className = "indiv-podium-row";
                 var leftSpan = document.createElement("span");
                 var rankStrong = document.createElement("strong");
                 rankStrong.textContent = "#" + (idx + 1);
                 leftSpan.appendChild(rankStrong);
-                leftSpan.appendChild(document.createTextNode(" " + st.name + " (🔥 Max Streak: " + (st.maxStreak || 0) + ")"));
+                leftSpan.appendChild(document.createTextNode(" " + st.name + " (Max Streak: 🔥 " + (st.maxStreak || 0) + ")"));
                 var rightStrong = document.createElement("strong");
                 rightStrong.textContent = (st.score || 0) + " pts";
-                rDiv.appendChild(leftSpan);
-                rDiv.appendChild(rightStrong);
-                finalList.appendChild(rDiv);
-                if (idx < 3) {
-                    setTimeout(function() { syncScoreToSheet(st.name, st.score || 0); }, idx * 600);
-                }
+                row.appendChild(leftSpan);
+                row.appendChild(rightStrong);
+                indivList.appendChild(row);
             });
-            indivStandingsBox.style.display = "block";
+            meta.textContent = "Individual Student Mode • Level: " + currentPathName.toUpperCase();
         } else {
-            indivStandingsBox.style.display = "none";
-            var winnerText = "";
-            if (score1 > score2) winnerText = "🎉 Congratulations to " + team1Name + "! / تهانينا لفوز " + team1Name + "! 🎉";
-            else if (score2 > score1) winnerText = "🎉 Congratulations to " + team2Name + "! / تهانينا لفوز " + team2Name + "! 🎉";
-            else winnerText = "🤝 It's a Tie! / تعادل بين الفريقين! 🤝";
-            document.getElementById("winner-announcement").textContent = winnerText;
-            document.getElementById("final-details").textContent = team1Name + ": " + score1 + " (🔥 Max: " + maxStreak1 + ") | " + team2Name + ": " + score2 + " (🔥 Max: " + maxStreak2 + ")";
-        }
-        
-        var levelNames = { easy: "Level 1: Core Tajweed", advanced: "Level 2: Advanced Rules", expert: "Level 3: Expert Recitation" };
-        document.getElementById("match-meta-details").textContent = (levelNames[currentPathName] || "") + " • Date: " + new Date().toLocaleDateString();
+            indivBox.style.display = "none";
+            if (score1 > score2) winnerBox.textContent = "🏆 " + team1Name + " Wins!";
+            else if (score2 > score1) winnerBox.textContent = "🏆 " + team2Name + " Wins!";
+            else winnerBox.textContent = "🤝 Draw Game! / تعادل رائع!";
+            
+            details.textContent = team1Name + ": " + score1 + " pts  |  " + team2Name + ": " + score2 + " pts";
+            meta.textContent = "Best Streaks: " + team1Name + " (🔥 " + maxStreak1 + ") • " + team2Name + " (🔥 " + maxStreak2 + ") • Level: " + currentPathName.toUpperCase();
 
-        renderMatchReview();
-        fetchLiveLeaderboard();
+            syncScoreToSheet(team1Name, score1);
+            setTimeout(function() { syncScoreToSheet(team2Name, score2); }, 600);
+        }
+
+        if (liveRoomRef) {
+            liveRoomRef.update({ status: "finished", score1: score1, score2: score2, students: indivPlayersMap });
+        }
+
+        renderMatchReviewList();
+        setTimeout(fetchLiveLeaderboard, 1300);
     }
 
-    function returnToMenu() {
+    function restartGame() {
         clearInterval(timerInterval);
         cleanupFirebaseListeners();
+        liveRoomCode = null;
+        playerRoomCode = null;
+        if (window.speechSynthesis) window.speechSynthesis.cancel();
+        if (window.location.search) {
+            try { window.history.replaceState({}, document.title, window.location.pathname); } catch (e) {}
+        }
         document.getElementById("summary-container").style.display = "none";
+        document.getElementById("quiz-container").style.display = "none";
         document.getElementById("setup-container").style.display = "none";
         document.getElementById("lobby-container").style.display = "none";
         document.getElementById("player-join-container").style.display = "none";
         document.getElementById("player-game-container").style.display = "none";
-        document.getElementById("quiz-container").style.display = "none";
         document.getElementById("live-stats").style.display = "none";
         document.getElementById("lifeline-bar").style.display = "none";
         document.getElementById("timer-bar-container").style.display = "none";
         document.getElementById("menu-container").style.display = "block";
+        updateMenuSubtitle();
     }
 
-    function addNewQuestionToStorage() {
+    function addCustomQuestion() {
         var track = document.getElementById("q-track").value;
         var topic = document.getElementById("q-topic").value.trim() || "Custom / مخصص";
         var husaryCode = document.getElementById("q-husary-code").value.trim();
         var husaryLabel = document.getElementById("q-husary-label").value.trim();
-        var textEn = document.getElementById("q-text-en").value.trim();
-        var textAr = document.getElementById("q-text-ar").value.trim();
-        
-        var opts = [
-            { en: document.getElementById("opt-en-0").value.trim(), ar: document.getElementById("opt-ar-0").value.trim() },
-            { en: document.getElementById("opt-en-1").value.trim(), ar: document.getElementById("opt-ar-1").value.trim() },
-            { en: document.getElementById("opt-en-2").value.trim(), ar: document.getElementById("opt-ar-2").value.trim() },
-            { en: document.getElementById("opt-en-3").value.trim(), ar: document.getElementById("opt-ar-3").value.trim() }
-        ];
+        var qEn = document.getElementById("q-text-en").value.trim();
+        var qAr = document.getElementById("q-text-ar").value.trim();
+        var opt0En = document.getElementById("opt-en-0").value.trim();
+        var opt0Ar = document.getElementById("opt-ar-0").value.trim();
+        var opt1En = document.getElementById("opt-en-1").value.trim();
+        var opt1Ar = document.getElementById("opt-ar-1").value.trim();
+        var opt2En = document.getElementById("opt-en-2").value.trim();
+        var opt2Ar = document.getElementById("opt-ar-2").value.trim();
+        var opt3En = document.getElementById("opt-en-3").value.trim();
+        var opt3Ar = document.getElementById("opt-ar-3").value.trim();
         var correct = parseInt(document.getElementById("q-correct").value, 10);
-        var exp = document.getElementById("q-exp").value.trim();
-
-        var hasAllOptions = opts.every(function(o) { return o.en.length > 0 && o.ar.length > 0; });
-
-        if (!textEn || !textAr || !hasAllOptions) {
-            alert("Please fill in both English and Arabic question fields AND all 4 bilingual options!");
-            return;
+        var exp = document.getElementById("q-exp").value.trim() || "No explanation / لا توجد ملاحظة.";
+        
+        if (!qEn || !qAr || !opt0En || !opt0Ar || !opt1En || !opt1Ar || !opt2En || !opt2Ar || !opt3En || !opt3Ar) { 
+            alert("Please enter the question and all 4 options in both English and Arabic! / يرجى ملء السؤال وجميع الخيارات الأربعة بالإنجليزية والعربية."); 
+            return; 
         }
+        
         var newQ = {
             topic: topic,
-            husaryCode: (husaryCode.length === 6) ? husaryCode : "",
-            husaryLabel: husaryLabel || "",
-            qEn: textEn,
-            qAr: textAr,
-            options: opts,
+            husaryCode: husaryCode.length === 6 ? husaryCode : "",
+            husaryLabel: husaryLabel,
+            qEn: qEn,
+            qAr: qAr,
+            options: [
+                {en: opt0En, ar: opt0Ar}, 
+                {en: opt1En, ar: opt1Ar}, 
+                {en: opt2En, ar: opt2Ar}, 
+                {en: opt3En, ar: opt3Ar}
+            ],
             correct: correct,
-            explanation: exp || "No explanation / لا توجد ملاحظة."
+            explanation: exp
         };
-
+        
         if (isFirebaseReady && firebaseDb) {
             firebaseDb.ref("customQuestions/" + track).push(newQ);
-        } else {
-            var stored = JSON.parse(localStorage.getItem("tajweed_duallang_" + track) || "[]");
-            stored.push(newQ);
-            localStorage.setItem("tajweed_duallang_" + track, JSON.stringify(stored));
         }
+
+        var existing = JSON.parse(localStorage.getItem("tajweed_duallang_" + track) || "[]");
+        existing.push(newQ);
+        localStorage.setItem("tajweed_duallang_" + track, JSON.stringify(existing));
 
         var enabled = getEnabledTopicsForLevel(track);
         if (enabled.indexOf(topic) === -1) {
             enabled.push(topic);
             saveEnabledTopicsForLevel(track, enabled);
-        } else {
-            updateLevelMenuBadges();
         }
-
+        
+        document.getElementById("q-topic").value = "";
+        document.getElementById("q-husary-code").value = "";
+        document.getElementById("q-husary-label").value = "";
+        document.getElementById("q-text-en").value = "";
+        document.getElementById("q-text-ar").value = "";
+        for(var j=0; j<4; j++) { 
+            document.getElementById("opt-en-" + j).value = ""; 
+            document.getElementById("opt-ar-" + j).value = ""; 
+        }
+        document.getElementById("q-exp").value = "";
+        
         document.getElementById("manage-track-select").value = track;
         document.getElementById("topic-filter-track").value = track;
         renderCustomQuestionsList();
         renderTopicSelectorForLevel();
-        showAdminAlert("Dual-language question saved & synced to Firebase Cloud!");
-        document.getElementById("q-text-en").value = ""; document.getElementById("q-text-ar").value = "";
-        document.getElementById("q-topic").value = ""; document.getElementById("q-husary-code").value = "";
-        document.getElementById("q-husary-label").value = "";
-        for(var i=0; i<4; i++) { document.getElementById("opt-en-"+i).value = ""; document.getElementById("opt-ar-"+i).value = ""; }
-        document.getElementById("q-exp").value = "";
+        updateLevelMenuBadges();
+        showAdminAlert("☁️ Dual-language question saved & synced to Firebase Cloud!");
     }
 
-    function showAdminAlert(msg) {
-        var alertEl = document.getElementById("admin-alert");
-        alertEl.textContent = msg; alertEl.style.display = "block";
-        setTimeout(function() { alertEl.style.display = "none"; }, 2500);
+    function exportCustomQuestions() {
+        function cleanExportList(list) {
+            return list.map(function(item) {
+                var copy = Object.assign({}, item);
+                delete copy._fbKey;
+                return copy;
+            });
+        }
+        var data = {
+            easy: cleanExportList((cloudCustomQuestions.easy && cloudCustomQuestions.easy.length > 0) ? cloudCustomQuestions.easy : JSON.parse(localStorage.getItem("tajweed_duallang_easy") || "[]")),
+            advanced: cleanExportList((cloudCustomQuestions.advanced && cloudCustomQuestions.advanced.length > 0) ? cloudCustomQuestions.advanced : JSON.parse(localStorage.getItem("tajweed_duallang_advanced") || "[]")),
+            expert: cleanExportList((cloudCustomQuestions.expert && cloudCustomQuestions.expert.length > 0) ? cloudCustomQuestions.expert : JSON.parse(localStorage.getItem("tajweed_duallang_expert") || "[]"))
+        };
+        var blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement("a");
+        a.href = url;
+        a.download = "tajweed_cloud_questions.json";
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+
+    function showAdminAlert(text) {
+        var alertBox = document.getElementById("admin-alert");
+        alertBox.textContent = text; 
+        alertBox.style.display = "block";
+        setTimeout(function() { alertBox.style.display = "none"; }, 3000);
     }
 })();
 </script>
-
 </body>
 </html>
