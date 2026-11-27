@@ -217,6 +217,25 @@
             .game-card { box-shadow: none; border: none; max-width: 100%; padding: 0; }
             #match-review-box { border: 1px solid #ccc; }
         }
+
+        /* Mastery Badges System */
+        .badge-nav-btn { background: #fef3c7 !important; border-color: #f59e0b !important; color: #92400e !important; font-weight: bold; }
+        .badge-nav-btn:hover { background: #fde68a !important; }
+        .badges-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; margin-top: 12px; }
+        .mastery-badge-card { border: 2px solid #e2e8f0; border-radius: 10px; padding: 12px; background: #f8fafc; text-align: center; transition: all 0.25s ease; position: relative; }
+        .mastery-badge-card.unlocked { border-color: #f59e0b; background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%); box-shadow: 0 3px 10px rgba(245, 158, 11, 0.18); }
+        .mastery-badge-card.locked { opacity: 0.58; filter: grayscale(0.85); }
+        .badge-icon { font-size: 2.1em; display: block; margin-bottom: 6px; }
+        .badge-title { font-weight: bold; color: #1e293b; font-size: 0.95em; display: block; }
+        .badge-title-ar { font-family: 'Amiri', serif; color: #1b4332; font-size: 1.02em; display: block; margin-bottom: 4px; }
+        .badge-desc { font-size: 0.8em; color: #475569; line-height: 1.35; display: block; }
+        .badge-status-pill { display: inline-block; margin-top: 8px; padding: 2px 9px; border-radius: 999px; font-size: 0.74em; font-weight: bold; }
+        .unlocked .badge-status-pill { background: #16a34a; color: #fff; }
+        .locked .badge-status-pill { background: #cbd5e1; color: #475569; }
+        .new-badges-banner { margin: 14px 0; padding: 14px; border-radius: 10px; background: linear-gradient(135deg, #fefce8 0%, #fef08a 100%); border: 2px solid #eab308; text-align: center; }
+        .new-badges-banner h4 { margin: 0 0 8px 0; color: #854d0e; font-size: 1.05em; }
+        .unlocked-pill-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+        .unlocked-pill { background: #fff; border: 1px solid #f59e0b; color: #78350f; padding: 5px 12px; border-radius: 999px; font-weight: bold; font-size: 0.88em; box-shadow: 0 2px 5px rgba(0,0,0,0.06); }
     </style>
 </head>
 <body>
@@ -230,6 +249,7 @@
             <button type="button" class="nav-btn join-btn" id="btn-join-room-nav" data-action="open-player-join" title="Join a Live Zoom/Phone Room">📱 Join Room / انضم لغرفة</button>
             <button type="button" class="nav-btn" id="btn-mute-sfx" data-action="toggle-mute" title="Toggle Sound Effects">🔊 SFX On</button>
             <button type="button" class="nav-btn lab-btn" data-action="open-lab" title="Interactive Tajweed & Madd Lab">🕌 Tajweed Lab</button>
+            <button type="button" class="nav-btn badge-nav-btn" id="btn-open-badges" data-action="open-badges" title="View Mastery Badges">🏅 Badges (<span id="nav-badge-count">0</span>/8)</button>
             <button type="button" class="nav-btn" data-action="open-rules" title="How to Play">📖 Rules</button>
             <button type="button" class="nav-btn" data-action="toggle-fullscreen" title="Toggle Fullscreen">⛶ Fullscreen</button>
             <button type="button" class="nav-btn active" id="btn-game-view" data-action="switch-view" data-view="game">Host</button>
@@ -310,6 +330,19 @@
         <div style="text-align: right;">
             <button type="button" class="action-btn" data-action="close-rules" style="width: auto; padding: 6px 20px; margin-top: 0;">Got it / فهمت</button>
         </div>
+
+    <!-- Mastery Badges Modal -->
+    <div id="badges-modal" class="modal-box">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
+            <h3 style="margin:0; color:#92400e;">🏅 Halaqah Mastery Badges / أوسمة الإتقان</h3>
+            <div style="display:flex; gap:6px;">
+                <button type="button" class="nav-btn" data-action="reset-badges" style="font-size:0.8em; color:#dc2626;">Reset Progress</button>
+                <button type="button" class="nav-btn" data-action="close-badges">✖ Close / إغلاق</button>
+            </div>
+        </div>
+        <p style="font-size:0.86em; color:#475569; margin:0 0 10px 0;">Earn badges across matches by building streaks, mastering levels, and scoring high!</p>
+        <div id="badges-grid-container" class="badges-grid"></div>
+    </div>
     </div>
 
     <!-- Game View (Host + Player Views) -->
@@ -589,6 +622,12 @@
             <div class="summary-score" id="winner-announcement">Winner</div>
             <p id="final-details" style="color: #475569; font-size: 1.1em; margin: 10px 0;"></p>
             <p id="match-meta-details" style="color: #64748b; font-size: 0.9em; margin-bottom: 15px;"></p>
+
+            <!-- Post-Match Earned Mastery Badges -->
+            <div id="match-unlocked-badges-box" class="new-badges-banner" style="display:none;">
+                <h4>🎉 Mastery Badges Earned / أوسمة مكتسبة في هذه الجولة!</h4>
+                <div id="match-unlocked-badges-list" class="unlocked-pill-row"></div>
+            </div>
 
             <!-- Individual Mode Final Standings Table -->
             <div id="indiv-final-standings-box" style="display:none; margin:16px 0; background:#f5f3ff; border:2px solid #c4b5fd; border-radius:10px; padding:15px; text-align:left;">
@@ -3692,9 +3731,9 @@
             if (view === "admin") {
                 if (document.getElementById("admin-panel").style.display === "block") return;
                 if (firebaseAuth && firebaseAuth.currentUser && !firebaseAuth.currentUser.isAnonymous) {
-    openAdminDashboard(firebaseAuth.currentUser);
-    return;
-}
+                    openAdminDashboard(firebaseAuth.currentUser);
+                    return;
+                }
                 document.getElementById("pass-error-msg").style.display = "none";
                 document.getElementById("password-modal").style.display = "block";
                 document.getElementById("admin-email-input").focus();
@@ -3818,6 +3857,16 @@
             document.getElementById("rules-modal").style.display = "block";
         } else if (action === "close-rules") {
             document.getElementById("rules-modal").style.display = "none";
+        } else if (action === "open-badges") {
+            renderBadgesModal();
+            document.getElementById("badges-modal").style.display = "block";
+        } else if (action === "close-badges") {
+            document.getElementById("badges-modal").style.display = "none";
+        } else if (action === "reset-badges") {
+            if (confirm("Reset all unlocked Mastery Badges? / هل تريد إعادة ضبط جميع الأوسمة؟")) {
+                saveUnlockedBadgesMap({});
+                renderBadgesModal();
+            }
         } else if (action === "toggle-fullscreen") {
             var card = document.querySelector(".game-card");
             if (!document.fullscreenElement && !isCssFullscreenActive) {
@@ -4534,6 +4583,144 @@
         URL.revokeObjectURL(url);
     }
 
+
+    // =========================================================================
+    // MASTERY BADGES SYSTEM
+    // =========================================================================
+    var MASTERY_BADGES_STORAGE_KEY = "tajweed_halaqah_badges_v1";
+
+    var MASTERY_BADGES = [
+        { id: "first_step", icon: "🌱", titleEn: "First Halaqah", titleAr: "بداية موفقة", desc: "Complete your first Tajweed match." },
+        { id: "streak_3", icon: "🔥", titleEn: "3x Flame Streak", titleAr: "شعلة التتابع", desc: "Achieve 3 consecutive correct answers in a match." },
+        { id: "streak_5", icon: "⚡", titleEn: "Unstoppable 5x", titleAr: "إتقان متواصل", desc: "Achieve 5 or more consecutive correct answers." },
+        { id: "sharpshooter", icon: "🎯", titleEn: "Sharp Reciter (90%+)", titleAr: "دقة عالية", desc: "Finish a match with 90% or higher team/class accuracy." },
+        { id: "core_master", icon: "🟢", titleEn: "Core Tajweed Scholar", titleAr: "متقن الأساسيات", desc: "Complete a Level 1 (Core Tajweed) challenge." },
+        { id: "adv_master", icon: "🔴", titleEn: "Advanced Ahkam Master", titleAr: "متقن الأحكام المتقدمة", desc: "Complete a Level 2 (Advanced Rules) challenge." },
+        { id: "expert_master", icon: "⭐", titleEn: "Grand Tajweed Master", titleAr: "وسام الختام والإتقان", desc: "Complete a Level 3 (Expert Recitation) challenge." },
+        { id: "high_scorer", icon: "👑", titleEn: "Halaqah Champion", titleAr: "بطل الحلقة", desc: "Score 15 or more points in a single match." }
+    ];
+
+    function getUnlockedBadgesMap() {
+        try {
+            return JSON.parse(localStorage.getItem(MASTERY_BADGES_STORAGE_KEY) || "{}");
+        } catch (e) {
+            return {};
+        }
+    }
+
+    function saveUnlockedBadgesMap(map) {
+        try {
+            localStorage.setItem(MASTERY_BADGES_STORAGE_KEY, JSON.stringify(map));
+        } catch (e) {}
+        updateBadgeNavCounter();
+    }
+
+    function updateBadgeNavCounter() {
+        var map = getUnlockedBadgesMap();
+        var count = Object.keys(map).filter(function(k) { return !!map[k]; }).length;
+        var el = document.getElementById("nav-badge-count");
+        if (el) el.textContent = count;
+    }
+
+    function renderBadgesModal() {
+        var grid = document.getElementById("badges-grid-container");
+        if (!grid) return;
+        var unlocked = getUnlockedBadgesMap();
+        grid.innerHTML = "";
+
+        MASTERY_BADGES.forEach(function(b) {
+            var isUnlocked = !!unlocked[b.id];
+            var card = document.createElement("div");
+            card.className = "mastery-badge-card " + (isUnlocked ? "unlocked" : "locked");
+
+            var iconSpan = document.createElement("span");
+            iconSpan.className = "badge-icon";
+            iconSpan.textContent = b.icon;
+
+            var titleSpan = document.createElement("span");
+            titleSpan.className = "badge-title";
+            titleSpan.textContent = b.titleEn;
+
+            var titleArSpan = document.createElement("span");
+            titleArSpan.className = "badge-title-ar";
+            titleArSpan.textContent = b.titleAr;
+
+            var descSpan = document.createElement("span");
+            descSpan.className = "badge-desc";
+            descSpan.textContent = b.desc;
+
+            var pillSpan = document.createElement("span");
+            pillSpan.className = "badge-status-pill";
+            pillSpan.textContent = isUnlocked ? "✅ Unlocked / مكتسب" : "🔒 Locked / مغلق";
+
+            card.appendChild(iconSpan);
+            card.appendChild(titleSpan);
+            card.appendChild(titleArSpan);
+            card.appendChild(descSpan);
+            card.appendChild(pillSpan);
+            grid.appendChild(card);
+        });
+    }
+
+    function evaluateMatchMasteryBadges() {
+        var unlocked = getUnlockedBadgesMap();
+        var earnedThisMatch = [];
+
+        function award(badgeId) {
+            var badgeObj = MASTERY_BADGES.find(function(b) { return b.id === badgeId; });
+            if (!badgeObj) return;
+            earnedThisMatch.push(badgeObj);
+            if (!unlocked[badgeId]) {
+                unlocked[badgeId] = Date.now();
+            }
+        }
+
+        award("first_step");
+
+        var bestMatchStreak = Math.max(maxStreak1 || 0, maxStreak2 || 0);
+        var topScore = Math.max(score1 || 0, score2 || 0);
+        if (selectedPlayMode === "individual" && indivPlayersMap) {
+            Object.keys(indivPlayersMap).forEach(function(id) {
+                var st = indivPlayersMap[id];
+                if ((st.maxStreak || 0) > bestMatchStreak) bestMatchStreak = st.maxStreak;
+                if ((st.score || 0) > topScore) topScore = st.score;
+            });
+        }
+
+        if (bestMatchStreak >= 3) award("streak_3");
+        if (bestMatchStreak >= 5) award("streak_5");
+        if (topScore >= 15) award("high_scorer");
+
+        if (matchHistory && matchHistory.length > 0) {
+            var correctCount = matchHistory.filter(function(item) { return item.isCorrect; }).length;
+            var pct = (correctCount / matchHistory.length) * 100;
+            if (pct >= 90) award("sharpshooter");
+        }
+
+        if (currentPathName === "easy") award("core_master");
+        if (currentPathName === "advanced") award("adv_master");
+        if (currentPathName === "expert") award("expert_master");
+
+        saveUnlockedBadgesMap(unlocked);
+
+        var banner = document.getElementById("match-unlocked-badges-box");
+        var list = document.getElementById("match-unlocked-badges-list");
+        if (banner && list) {
+            if (earnedThisMatch.length > 0) {
+                list.innerHTML = "";
+                earnedThisMatch.forEach(function(b) {
+                    var pill = document.createElement("span");
+                    pill.className = "unlocked-pill";
+                    pill.textContent = b.icon + " " + b.titleEn + " (" + b.titleAr + ")";
+                    list.appendChild(pill);
+                });
+                banner.style.display = "block";
+            } else {
+                banner.style.display = "none";
+            }
+        }
+    }
+
     function showSummary() {
         clearInterval(timerInterval);
         clearInterval(autoAdvanceTimeout);
@@ -4600,6 +4787,7 @@
             liveRoomRef.update({ status: "finished", score1: score1, score2: score2, students: indivPlayersMap });
         }
 
+        evaluateMatchMasteryBadges();
         renderMatchReviewList();
         setTimeout(fetchLiveLeaderboard, 1300);
     }
@@ -4726,6 +4914,7 @@
         alertBox.style.display = "block";
         setTimeout(function() { alertBox.style.display = "none"; }, 3000);
     }
+    updateBadgeNavCounter();
 })();
 </script>
 </body>
