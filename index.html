@@ -797,13 +797,38 @@
             </div>
         </div>
 
-        <div class="section-box">
-            <div class="section-title">💾 Custom Questions Backup / النسخ الاحتياطي</div>
-            <div style="display:flex; gap:10px; flex-wrap:wrap;">
-                <button type="button" class="action-btn" data-action="export-questions" style="flex:1; margin-top:0; background:#0284c7;">📥 Export Backup</button>
-                <button type="button" class="action-btn" data-action="trigger-import" style="flex:1; margin-top:0; background:#0d9488;">📤 Import Backup</button>
-                <input type="file" id="import-file-input" accept=".json" style="display:none;">
+        <div class="section-box" style="border-color:#0d9488; background:#f0fdfa;">
+            <div class="section-title" style="color:#0f766e;">📦 Bulk JSON Generator, Paste &amp; File Import / الاستيراد والتصدير الجماعي (JSON)</div>
+            <p style="font-size:0.86em; color:#334155; margin-top:0; margin-bottom:10px;">
+                Add dozens of bilingual questions at once! Copy the AI prompt to generate a JSON pack, download a sample template, or import via <strong>.json file</strong> or <strong>direct paste</strong>:
+            </p>
+            <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;">
+                <button type="button" class="nav-btn" data-action="copy-ai-json-prompt" style="background:#7c3aed; color:#fff;">🤖 Copy AI Bulk-Generate Prompt / نسخ أمر التوليد</button>
+                <button type="button" class="nav-btn" data-action="download-json-template" style="background:#e0f2fe; color:#0369a1; border:1px solid #7dd3fc;">📄 Download JSON Template / قالب فارغ</button>
+                <button type="button" class="nav-btn" data-action="export-questions" style="background:#0284c7; color:#fff;">📥 Export Current Cloud Questions</button>
             </div>
+            <div id="json-prompt-toast" style="font-size:0.84em; color:#6d28d9; font-weight:bold; margin-bottom:8px;"></div>
+
+            <div class="form-row" style="align-items:center; margin-bottom:8px;">
+                <div class="form-group" style="margin-bottom:0;">
+                    <label class="admin-card-label" for="import-mode-select">Import Behavior / طريقة الاستيراد:</label>
+                    <select id="import-mode-select">
+                        <option value="merge" selected>➕ Append / Merge with Existing Questions (Recommended)</option>
+                        <option value="replace">♻️ Replace Existing Custom Questions in Included Levels</option>
+                    </select>
+                </div>
+                <div class="form-group" style="margin-bottom:0;">
+                    <label class="admin-card-label">Upload .json File / رفع ملف:</label>
+                    <button type="button" class="action-btn" data-action="trigger-import" style="margin-top:0; background:#0d9488; padding:10px 16px;">📤 Upload &amp; Import .json File</button>
+                    <input type="file" id="import-file-input" accept=".json" style="display:none;">
+                </div>
+            </div>
+
+            <div class="form-group" style="margin-top:10px; margin-bottom:8px;">
+                <label class="admin-card-label" for="bulk-json-paste-input">Or Paste JSON Directly Here / أو الصق كود JSON مباشرة هنا:</label>
+                <textarea id="bulk-json-paste-input" style="height:105px; font-family:monospace; font-size:0.84em;" placeholder='{"easy": [{"topic": "Qalqalah / القلقلة", "husaryCode": "112002", "husaryLabel": "Surah Al-Ikhlas 112:2", "qEn": "...", "qAr": "...", "options": [{"en":"...","ar":"..."},{"en":"...","ar":"..."},{"en":"...","ar":"..."},{"en":"...","ar":"..."}], "correct": 0, "explanation": "..."}], "advanced": [], "expert": []}'></textarea>
+            </div>
+            <button type="button" class="action-btn" data-action="import-pasted-json" style="margin-top:0; background:#0f766e;">⚡ Import Pasted JSON to Cloud / استيراد النص المُلصق</button>
         </div>
 
         <div id="admin-alert" class="alert-box">Saved successfully!</div>
@@ -3418,33 +3443,126 @@
         if (e.key === "Enter") { e.preventDefault(); verifyPassword(); }
     });
 
+    function sanitizeImportedQuestion(q) {
+        if (!q || typeof q !== "object") return null;
+        var qEn = String(q.qEn || "").trim();
+        var qAr = String(q.qAr || "").trim();
+        if (!qEn && !qAr) return null;
+        if (!Array.isArray(q.options) || q.options.length < 2) return null;
+
+        var cleanOpts = [];
+        for (var i = 0; i < 4; i++) {
+            var opt = q.options[i] || { en: "", ar: "" };
+            cleanOpts.push({
+                en: String(opt.en || "").trim(),
+                ar: String(opt.ar || "").trim()
+            });
+        }
+        var rawCode = String(q.husaryCode || "").trim();
+        if (rawCode && /^\d+$/.test(rawCode) && rawCode.length < 6) {
+            rawCode = ("000000" + rawCode).slice(-6);
+        }
+        var correctIdx = parseInt(q.correct, 10);
+        if (isNaN(correctIdx) || correctIdx < 0 || correctIdx > 3) correctIdx = 0;
+
+        return {
+            topic: String(q.topic || "Custom / مخصص").trim(),
+            husaryCode: rawCode.length === 6 ? rawCode : "",
+            husaryLabel: String(q.husaryLabel || "").trim(),
+            qEn: qEn,
+            qAr: qAr,
+            options: cleanOpts,
+            correct: correctIdx,
+            explanation: String(q.explanation || "No explanation / لا توجد ملاحظة.").trim()
+        };
+    }
+
+    function processBulkJsonImport(rawText) {
+        var cleanedText = String(rawText || "").trim();
+        // Strip optional markdown ```json fences if pasted directly from an AI response
+        cleanedText = cleanedText.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+        if (!cleanedText) {
+            alert("Please paste valid JSON or choose a .json file first.");
+            return;
+        }
+
+        var imported;
+        try {
+            imported = JSON.parse(cleanedText);
+        } catch (err) {
+            alert("Invalid JSON syntax: " + err.message);
+            return;
+        }
+
+        var mode = document.getElementById("import-mode-select").value || "merge";
+        var totalAdded = 0;
+
+        ["easy", "advanced", "expert"].forEach(function(lvl) {
+            if (!Array.isArray(imported[lvl])) return;
+            var validBatch = [];
+            imported[lvl].forEach(function(rawQ) {
+                var cleanQ = sanitizeImportedQuestion(rawQ);
+                if (cleanQ) validBatch.push(cleanQ);
+            });
+            if (validBatch.length === 0) return;
+
+            totalAdded += validBatch.length;
+
+            // Ensure imported topics are enabled in level topic filters
+            var enabled = getEnabledTopicsForLevel(lvl);
+            var topicsChanged = false;
+            validBatch.forEach(function(qItem) {
+                if (enabled.indexOf(qItem.topic) === -1) {
+                    enabled.push(qItem.topic);
+                    topicsChanged = true;
+                }
+            });
+            if (topicsChanged) saveEnabledTopicsForLevel(lvl, enabled);
+
+            if (mode === "replace") {
+                localStorage.setItem("tajweed_duallang_" + lvl, JSON.stringify(validBatch));
+                if (isFirebaseReady && firebaseDb) {
+                    var lvlRef = firebaseDb.ref("customQuestions/" + lvl);
+                    lvlRef.remove().then(function() {
+                        validBatch.forEach(function(qItem) { lvlRef.push(qItem); });
+                    });
+                }
+            } else {
+                var existing = (cloudCustomQuestions[lvl] && cloudCustomQuestions[lvl].length > 0)
+                    ? cloudCustomQuestions[lvl].map(function(item) {
+                        var copy = Object.assign({}, item);
+                        delete copy._fbKey;
+                        return copy;
+                    })
+                    : JSON.parse(localStorage.getItem("tajweed_duallang_" + lvl) || "[]");
+
+                var merged = existing.concat(validBatch);
+                localStorage.setItem("tajweed_duallang_" + lvl, JSON.stringify(merged));
+                if (isFirebaseReady && firebaseDb) {
+                    var pushRef = firebaseDb.ref("customQuestions/" + lvl);
+                    validBatch.forEach(function(qItem) { pushRef.push(qItem); });
+                }
+            }
+        });
+
+        if (totalAdded === 0) {
+            alert("No valid questions found in JSON. Make sure arrays are under 'easy', 'advanced', or 'expert'.");
+            return;
+        }
+
+        renderCustomQuestionsList();
+        renderTopicSelectorForLevel();
+        updateLevelMenuBadges();
+        showAdminAlert("✅ Imported " + totalAdded + " questions (" + (mode === "merge" ? "Merged" : "Replaced") + ") & synced to Cloud!");
+    }
+
     document.getElementById("import-file-input").addEventListener("change", function(e) {
         var file = e.target.files[0];
         if (!file) return;
         var reader = new FileReader();
         reader.onload = function(evt) {
-            try {
-                var imported = JSON.parse(evt.target.result);
-                ["easy", "advanced", "expert"].forEach(function(lvl) {
-                    if (Array.isArray(imported[lvl])) {
-                        localStorage.setItem("tajweed_duallang_" + lvl, JSON.stringify(imported[lvl]));
-                        if (isFirebaseReady && firebaseDb) {
-                            var lvlRef = firebaseDb.ref("customQuestions/" + lvl);
-                            lvlRef.remove().then(function() {
-                                imported[lvl].forEach(function(qItem) {
-                                    var cleanItem = Object.assign({}, qItem);
-                                    delete cleanItem._fbKey;
-                                    lvlRef.push(cleanItem);
-                                });
-                            });
-                        }
-                    }
-                });
-                renderCustomQuestionsList();
-                renderTopicSelectorForLevel();
-                updateLevelMenuBadges();
-                showAdminAlert("Backup questions imported & synced to Firebase Cloud!");
-            } catch (err) { alert("Invalid backup file format!"); }
+            processBulkJsonImport(evt.target.result);
+            e.target.value = "";
         };
         reader.readAsText(file);
     });
@@ -3786,6 +3904,68 @@
             showAdminAlert("Backup exported successfully!");
         } else if (action === "sync-google-sheet-questions") {
             loadQuestionsFromGoogleSheet(true);
+        } else if (action === "copy-ai-json-prompt") {
+            var aiPrompt = [
+                "Generate 30 bilingual (English & Arabic) Tajweed multiple-choice questions divided into 'easy' (10), 'advanced' (10), and 'expert' (10) in valid JSON format ONLY (no markdown outside JSON).",
+                "Follow this exact schema:",
+                '{',
+                '  "easy": [',
+                '    {',
+                '      "topic": "Qalqalah / القلقلة",',
+                '      "husaryCode": "112002",',
+                '      "husaryLabel": "Surah Al-Ikhlas 112:2 — اللَّهُ الصَّمَدُ",',
+                '      "qEn": "Which Qalqalah grade occurs on Dal in (اللَّهُ الصَّمَدُ) when stopping?",',
+                '      "qAr": "ما مرتبة القلقلة في حرف الدال عند الوقف على (اللَّهُ الصَّمَدُ)؟",',
+                '      "options": [',
+                '        { "en": "Qalqalah Kubra", "ar": "قلقلة كبرى" },',
+                '        { "en": "Qalqalah Sughra", "ar": "قلقلة صغرى" },',
+                '        { "en": "No Qalqalah", "ar": "لا قلقلة" },',
+                '        { "en": "Ghunnah", "ar": "غنة" }',
+                '      ],',
+                '      "correct": 0,',
+                '      "explanation": "Stopping on a non-doubled Qalqalah letter at the end of a word produces Qalqalah Kubra. / الوقف على حرف القلقلة غير المشدد يوجب القلقلة الكبرى."',
+                '    }',
+                '  ],',
+                '  "advanced": [],',
+                '  "expert": []',
+                '}',
+                "Rules: 'husaryCode' must be a 6-digit SSSAAA code (3-digit Surah + 3-digit Ayah, e.g., 112002) for listening questions or '' for text-only questions. 'correct' is 0-3."
+            ].join("\n");
+            copyTextSafely(aiPrompt, document.getElementById("json-prompt-toast"), "✅ AI Bulk-Generate Prompt copied! Paste it into Gemini/ChatGPT to generate your JSON pack.");
+        } else if (action === "download-json-template") {
+            var templateObj = {
+                easy: [
+                    {
+                        topic: "Qalqalah / القلقلة",
+                        husaryCode: "112002",
+                        husaryLabel: "Surah Al-Ikhlas 112:2 — اللَّهُ الصَّمَدُ",
+                        qEn: "Which Qalqalah grade occurs on the Dal in (اللَّهُ الصَّمَدُ) when stopping?",
+                        qAr: "ما مرتبة القلقلة في حرف الدال عند الوقف على (اللَّهُ الصَّمَدُ)؟",
+                        options: [
+                            { en: "Qalqalah Kubra", ar: "قلقلة كبرى" },
+                            { en: "Qalqalah Sughra", ar: "قلقلة صغرى" },
+                            { en: "No Qalqalah", ar: "لا قلقلة" },
+                            { en: "Ghunnah", ar: "غنة" }
+                        ],
+                        correct: 0,
+                        explanation: "Stopping on a non-doubled Qalqalah letter produces Qalqalah Kubra. / الوقف على حرف القلقلة غير المشدد يوجب القلقلة الكبرى."
+                    }
+                ],
+                advanced: [],
+                expert: []
+            };
+            var tplStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(templateObj, null, 2));
+            var tplAnchor = document.createElement("a");
+            tplAnchor.setAttribute("href", tplStr);
+            tplAnchor.setAttribute("download", "tajweed_bulk_template.json");
+            document.body.appendChild(tplAnchor);
+            tplAnchor.click();
+            tplAnchor.remove();
+            showAdminAlert("Sample JSON template downloaded!");
+        } else if (action === "import-pasted-json") {
+            var pastedVal = document.getElementById("bulk-json-paste-input").value;
+            processBulkJsonImport(pastedVal);
+            document.getElementById("bulk-json-paste-input").value = "";
         } else if (action === "trigger-import") {
             document.getElementById("import-file-input").click();
         }
