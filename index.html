@@ -2690,6 +2690,17 @@
         cleanupFirebaseListeners();
         buildQuestionPool();
 
+        // Sweep and delete abandoned rooms older than 6 hours (21,600,000 ms)
+        var sixHoursAgo = Date.now() - (6 * 60 * 60 * 1000);
+        firebaseDb.ref("rooms")
+            .orderByChild("createdAt")
+            .endAt(sixHoursAgo)
+            .once("value", function(oldSnap) {
+                oldSnap.forEach(function(childSnap) {
+                    childSnap.ref.remove();
+                });
+            });
+
         liveRoomCode = Math.floor(1000 + Math.random() * 9000).toString();
         liveRoomRef = firebaseDb.ref("rooms/" + liveRoomCode);
         indivPlayersMap = {};
@@ -2740,6 +2751,9 @@
             answers: {},
             createdAt: firebase.database.ServerValue.TIMESTAMP
         });
+
+        // Automatically remove this room if the host closes the browser tab unexpectedly
+        liveRoomRef.onDisconnect().remove();
 
         if (firebaseAnalytics) {
             try { firebaseAnalytics.logEvent("create_live_room", { level: currentPathName, mode: selectedPlayMode }); } catch (e) {}
@@ -4784,7 +4798,12 @@
         }
 
         if (liveRoomRef) {
-            liveRoomRef.update({ status: "finished", score1: score1, score2: score2, students: indivPlayersMap });
+            var roomToClean = liveRoomRef;
+            roomToClean.update({ status: "finished", score1: score1, score2: score2, students: indivPlayersMap });
+            // Remove finished room from Firebase 60 seconds after students view final scores
+            setTimeout(function() {
+                roomToClean.remove();
+            }, 60000);
         }
 
         evaluateMatchMasteryBadges();
