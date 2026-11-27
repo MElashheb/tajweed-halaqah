@@ -3691,10 +3691,10 @@
             var view = target.getAttribute("data-view");
             if (view === "admin") {
                 if (document.getElementById("admin-panel").style.display === "block") return;
-                if (firebaseAuth && firebaseAuth.currentUser) {
-                    openAdminDashboard(firebaseAuth.currentUser);
-                    return;
-                }
+                if (firebaseAuth && firebaseAuth.currentUser && !firebaseAuth.currentUser.isAnonymous) {
+    openAdminDashboard(firebaseAuth.currentUser);
+    return;
+}
                 document.getElementById("pass-error-msg").style.display = "none";
                 document.getElementById("password-modal").style.display = "block";
                 document.getElementById("admin-email-input").focus();
