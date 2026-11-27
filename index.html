@@ -78,6 +78,7 @@
         .topic-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 6px; }
         .topic-tag { display: inline-block; background: #edf2f7; color: #4a5568; font-size: 0.8em; font-weight: 600; padding: 4px 10px; border-radius: 4px; }
         .double-pts-badge { display: none; background: #7c3aed; color: #fff; font-size: 0.8em; font-weight: bold; padding: 4px 10px; border-radius: 4px; animation: pulse 1.5s infinite; }
+        .tiebreaker-badge { display: none; background: #dc2626; color: #fff; font-size: 0.82em; font-weight: bold; padding: 4px 10px; border-radius: 4px; animation: pulse 1.2s infinite; }
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.7; } 100% { opacity: 1; } }
 
         .speak-btn { background: #ecfdf5; border: 1px solid #10b981; color: #047857; padding: 5px 12px; border-radius: 6px; font-size: 0.84em; font-weight: bold; cursor: pointer; font-family: inherit; }
@@ -504,6 +505,7 @@
                     <div>
                         <span id="player-topic" class="topic-tag">Topic</span>
                         <span id="player-double-badge" class="double-pts-badge">⚡ 2x DOUBLE POINTS FINALE!</span>
+                        <span id="player-tiebreaker-badge" class="tiebreaker-badge">⚔️ SUDDEN-DEATH TIE-BREAKER!</span>
                     </div>
                     <button type="button" class="speak-btn" data-action="player-speak-question">🔊 Read Arabic / قراءة السؤال</button>
                 </div>
@@ -535,6 +537,7 @@
                 <div>
                     <span id="topic" class="topic-tag">Topic</span>
                     <span id="double-pts-badge" class="double-pts-badge">⚡ 2x DOUBLE POINTS FINALE!</span>
+                    <span id="tiebreaker-badge" class="tiebreaker-badge">⚔️ SUDDEN-DEATH TIE-BREAKER!</span>
                 </div>
                 <div style="display:flex; gap:6px; align-items:center;">
                     <span id="host-room-pill" style="display:none; background:#dbeafe; color:#1e40af; padding:4px 10px; border-radius:6px; font-size:0.82em; font-weight:bold;">Room: ----</span>
@@ -2522,6 +2525,8 @@
 
     var currentPathName = 'easy';
     var activePath = [];
+    var reserveTieBreakerPool = [];
+    var isTieBreakerRound = false;
     var currentQuestion = 0;
     var score1 = 0;
     var score2 = 0;
@@ -2588,15 +2593,11 @@
         var targetCount = parseInt(localStorage.getItem("tajweed_q_count") || "10", 10);
         if (targetCount > filteredList.length) targetCount = filteredList.length;
 
-        shuffleArray(filteredList);
-        var selectedPool = filteredList.slice(0, targetCount);
-
-        activePath = selectedPool.map(function(q) {
+        function formatQuestionEntry(q) {
             var clonedOptions = q.options.map(function(opt, idx) {
                 return { opt: opt, isCorrect: idx === q.correct };
             });
             shuffleArray(clonedOptions);
-            
             var newCorrectIndex = clonedOptions.findIndex(function(item) { return item.isCorrect; });
             return {
                 topic: q.topic,
@@ -2608,7 +2609,19 @@
                 correct: newCorrectIndex,
                 explanation: q.explanation
             };
-        });
+        }
+
+        shuffleArray(filteredList);
+        var selectedPool = filteredList.slice(0, targetCount);
+        var leftoverPool = filteredList.slice(targetCount);
+        if (leftoverPool.length === 0) {
+            leftoverPool = combinedList.slice();
+            shuffleArray(leftoverPool);
+        }
+
+        activePath = selectedPool.map(formatQuestionEntry);
+        reserveTieBreakerPool = leftoverPool.map(formatQuestionEntry);
+        isTieBreakerRound = false;
 
         if (currentPathName === 'easy') timeLimit = parseInt(localStorage.getItem("tajweed_easy_time") || "20", 10);
         else if (currentPathName === 'advanced') timeLimit = parseInt(localStorage.getItem("tajweed_adv_time") || "30", 10);
@@ -2806,12 +2819,13 @@
         document.getElementById("host-indiv-podium").style.display = "none";
         document.getElementById("indiv-locked-count").textContent = "0";
 
-        var isFinal = (currentQuestion === activePath.length - 1);
+        var isFinal = (!isTieBreakerRound && currentQuestion === activePath.length - 1);
         liveRoomRef.update({
             status: "question",
             qIndex: currentQuestion,
             totalQuestions: activePath.length,
             isFinal: isFinal,
+            isTieBreaker: isTieBreakerRound,
             timeLimit: timeLimit,
             questionStartedAt: firebase.database.ServerValue.TIMESTAMP,
             currentQuestion: {
@@ -2834,7 +2848,7 @@
 
         var qData = activePath[currentQuestion];
         var buttons = document.querySelectorAll(".opt-btn");
-        var isFinal = (currentQuestion === activePath.length - 1);
+        var isFinal = (!isTieBreakerRound && currentQuestion === activePath.length - 1);
 
         var t1Correct = ans1 && ans1.choice === qData.correct;
         var t2Correct = ans2 && ans2.choice === qData.correct;
@@ -2926,7 +2940,7 @@
 
         var qData = activePath[currentQuestion];
         var buttons = document.querySelectorAll(".opt-btn");
-        var isFinal = (currentQuestion === activePath.length - 1);
+        var isFinal = (!isTieBreakerRound && currentQuestion === activePath.length - 1);
 
         var correctList = [];
         Object.keys(answersMap).forEach(function(sId) {
@@ -3213,9 +3227,12 @@
                 playerCurrentQIndex = room.qIndex;
                 document.getElementById("player-topic").textContent = room.currentQuestion.topic;
                 document.getElementById("player-double-badge").style.display = room.isFinal ? "inline-block" : "none";
-                document.getElementById("player-q-en").textContent = (room.qIndex + 1) + ". " + room.currentQuestion.qEn;
+                document.getElementById("player-tiebreaker-badge").style.display = room.isTieBreaker ? "inline-block" : "none";
+                document.getElementById("player-q-en").textContent = (room.isTieBreaker ? "⚔️ TIE-BREAKER: " : ((room.qIndex + 1) + ". ")) + room.currentQuestion.qEn;
                 document.getElementById("player-q-ar").textContent = room.currentQuestion.qAr;
-                document.getElementById("player-progress").textContent = "Question " + (room.qIndex + 1) + " of " + room.totalQuestions;
+                document.getElementById("player-progress").textContent = room.isTieBreaker
+                    ? "⚔️ Sudden-Death Tie-Breaker Round / جولة كسر التعادل"
+                    : ("Question " + (room.qIndex + 1) + " of " + room.totalQuestions);
                 document.getElementById("player-feedback").style.display = "none";
 
                 var pHusaryCard = document.getElementById("player-husary-card");
@@ -4162,24 +4179,30 @@
         isTransferPhase = false;
         
         var qData = activePath[currentQuestion];
-        var isFinalQuestion = (currentQuestion === activePath.length - 1);
+        var isFinalQuestion = (!isTieBreakerRound && currentQuestion === activePath.length - 1);
 
         if (selectedPlayMode === "live") {
-            document.getElementById("turn-banner").textContent = "🌐 Live Zoom 2-Team Round — Both Teams Answering Simultaneously! / جولة مباشرة للفريقين";
-            document.getElementById("turn-banner").style.background = "#e0f2fe";
-            document.getElementById("turn-banner").style.color = "#0369a1";
+            document.getElementById("turn-banner").textContent = isTieBreakerRound
+                ? "⚔️ SUDDEN-DEATH TIE-BREAKER! Fastest Correct Team Wins! / جولة كسر التعادل الحاسمة"
+                : "🌐 Live Zoom 2-Team Round — Both Teams Answering Simultaneously! / جولة مباشرة للفريقين";
+            document.getElementById("turn-banner").style.background = isTieBreakerRound ? "#fee2e2" : "#e0f2fe";
+            document.getElementById("turn-banner").style.color = isTieBreakerRound ? "#991b1b" : "#0369a1";
             hostPushLiveQuestion(qData);
         } else if (selectedPlayMode === "individual") {
-            document.getElementById("turn-banner").textContent = "👤 Live Individual Student Round — Everyone Answers on Their Own Screen! / جولة فردية لجميع الطلاب";
-            document.getElementById("turn-banner").style.background = "#ede9fe";
-            document.getElementById("turn-banner").style.color = "#5b21b6";
+            document.getElementById("turn-banner").textContent = isTieBreakerRound
+                ? "⚔️ SUDDEN-DEATH TIE-BREAKER! Fastest Correct Student Wins! / جولة كسر التعادل الحاسمة"
+                : "👤 Live Individual Student Round — Everyone Answers on Their Own Screen! / جولة فردية لجميع الطلاب";
+            document.getElementById("turn-banner").style.background = isTieBreakerRound ? "#fee2e2" : "#ede9fe";
+            document.getElementById("turn-banner").style.color = isTieBreakerRound ? "#991b1b" : "#5b21b6";
             hostPushLiveQuestion(qData);
         } else {
             activeTeam = (currentQuestion % 2 === 0) ? 1 : 2;
             var activeTeamName = (activeTeam === 1) ? team1Name : team2Name;
-            document.getElementById("turn-banner").textContent = "Current Turn: " + activeTeamName + " / دور الفريق";
-            document.getElementById("turn-banner").style.background = (activeTeam === 1) ? "#e0f2fe" : "#fce7f3";
-            document.getElementById("turn-banner").style.color = (activeTeam === 1) ? "#0369a1" : "#be185d";
+            document.getElementById("turn-banner").textContent = isTieBreakerRound
+                ? ("⚔️ SUDDEN-DEATH TIE-BREAKER — Turn: " + activeTeamName + " / جولة كسر التعادل")
+                : ("Current Turn: " + activeTeamName + " / دور الفريق");
+            document.getElementById("turn-banner").style.background = isTieBreakerRound ? "#fee2e2" : ((activeTeam === 1) ? "#e0f2fe" : "#fce7f3");
+            document.getElementById("turn-banner").style.color = isTieBreakerRound ? "#991b1b" : ((activeTeam === 1) ? "#0369a1" : "#be185d");
             updateLifelineButtonsUI();
         }
         updateTurnHighlight();
@@ -4196,10 +4219,13 @@
         }
 
         document.getElementById("double-pts-badge").style.display = isFinalQuestion ? "inline-block" : "none";
+        document.getElementById("tiebreaker-badge").style.display = isTieBreakerRound ? "inline-block" : "none";
         document.getElementById("topic").textContent = qData.topic;
-        document.getElementById("q-en-text").textContent = (currentQuestion + 1) + ". " + qData.qEn;
+        document.getElementById("q-en-text").textContent = (isTieBreakerRound ? "⚔️ TIE-BREAKER: " : ((currentQuestion + 1) + ". ")) + qData.qEn;
         document.getElementById("q-ar-text").textContent = qData.qAr;
-        document.getElementById("progress").textContent = "Question " + (currentQuestion + 1) + " of " + activePath.length + " / سؤال " + (currentQuestion + 1) + " من " + activePath.length;
+        document.getElementById("progress").textContent = isTieBreakerRound
+            ? "⚔️ Sudden-Death Tie-Breaker Round / جولة كسر التعادل"
+            : ("Question " + (currentQuestion + 1) + " of " + activePath.length + " / سؤال " + (currentQuestion + 1) + " من " + activePath.length);
         
         var optContainer = document.getElementById("options");
         optContainer.innerHTML = "";
@@ -4254,7 +4280,7 @@
         var buttons = document.querySelectorAll("#options .opt-btn");
         var feedback = document.getElementById("feedback");
         var activeTeamName = (activeTeam === 1) ? team1Name : team2Name;
-        var isFinalQuestion = (currentQuestion === activePath.length - 1);
+        var isFinalQuestion = (!isTieBreakerRound && currentQuestion === activePath.length - 1);
         
         for (var i = 0; i < buttons.length; i++) buttons[i].disabled = true;
         
@@ -4324,6 +4350,7 @@
 
     function recordMatchQuestion(qData, wasCorrect, outcomeLabel) {
         matchHistory.push({
+            isTieBreaker: isTieBreakerRound,
             topic: qData.topic,
             qEn: qData.qEn,
             qAr: qData.qAr,
@@ -4365,9 +4392,52 @@
         buttons[qData.correct].style.fontWeight = "bold";
     }
 
+    function checkMatchIsTied() {
+        if (selectedPlayMode === "individual") {
+            var ranked = Object.keys(indivPlayersMap).map(function(id) { return indivPlayersMap[id]; })
+                .sort(function(a, b) { return (b.score || 0) - (a.score || 0); });
+            return (ranked.length >= 2 && (ranked[0].score || 0) === (ranked[1].score || 0));
+        }
+        return (score1 === score2);
+    }
+
+    function launchSuddenDeathTieBreaker() {
+        if (reserveTieBreakerPool.length === 0) {
+            var fallbackAll = getAllCombinedQuestionsForLevel(currentPathName);
+            shuffleArray(fallbackAll);
+            reserveTieBreakerPool = fallbackAll.map(function(q) {
+                var clonedOptions = q.options.map(function(opt, idx) {
+                    return { opt: opt, isCorrect: idx === q.correct };
+                });
+                shuffleArray(clonedOptions);
+                var newCorrectIndex = clonedOptions.findIndex(function(item) { return item.isCorrect; });
+                return {
+                    topic: q.topic,
+                    husaryCode: q.husaryCode || "",
+                    husaryLabel: q.husaryLabel || "",
+                    qEn: q.qEn,
+                    qAr: q.qAr,
+                    options: clonedOptions.map(function(item) { return item.opt; }),
+                    correct: newCorrectIndex,
+                    explanation: q.explanation
+                };
+            });
+        }
+        var tieQ = reserveTieBreakerPool.shift();
+        isTieBreakerRound = true;
+        activePath.push(tieQ);
+        loadQuestion();
+    }
+
     function showNextButton() {
         var nextBtn = document.getElementById("next-btn");
-        nextBtn.textContent = (currentQuestion < activePath.length - 1) ? "Next Question / السؤال التالي →" : "Final Results / النتائج النهائية →";
+        if (currentQuestion < activePath.length - 1) {
+            nextBtn.textContent = "Next Question / السؤال التالي →";
+        } else if (checkMatchIsTied()) {
+            nextBtn.textContent = "⚔️ Sudden-Death Tie-Breaker / جولة كسر التعادل →";
+        } else {
+            nextBtn.textContent = "Final Results / النتائج النهائية →";
+        }
         nextBtn.style.display = "inline-block";
     }
 
@@ -4376,6 +4446,8 @@
         currentQuestion++;
         if (currentQuestion < activePath.length) {
             loadQuestion();
+        } else if (checkMatchIsTied()) {
+            launchSuddenDeathTieBreaker();
         } else {
             showSummary();
         }
@@ -4398,7 +4470,7 @@
             var titleSpan = document.createElement("strong");
             titleSpan.style.fontSize = "0.9em";
             titleSpan.style.color = "#1e293b";
-            titleSpan.textContent = "Q" + (i + 1) + ". [" + item.topic + "]";
+            titleSpan.textContent = (item.isTieBreaker ? "⚔️ Tie-Breaker" : ("Q" + (i + 1))) + ". [" + item.topic + "]";
 
             var badgeSpan = document.createElement("span");
             badgeSpan.className = item.wasCorrect ? "badge-correct" : "badge-missed";
